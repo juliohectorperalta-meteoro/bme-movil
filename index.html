@@ -229,7 +229,7 @@
   </section>
 
   <section id="tab-cfg" class="oculto">
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>14/11/2026 · 16:50</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>14/11/2026 · 17:45</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -1026,6 +1026,7 @@ let ultimaLectura = null;
 function mostrarLectura(l) {
   ultimaLectura = l;
   actualizarMediaSession();
+  actualizarServicio();
   alarmasMovil = calcularAlarmasMovil(l);
   setTimeout(dibujarAlarmas, 0);
   if (!isNaN(l.alt)) mostrarAltura(l.alt);
@@ -1237,6 +1238,46 @@ async function conectarNativo() {
   } finally { conectandoNativo = false; }
 }
 
+// ===== Servicio permanente de Android: mantiene la app recibiendo con la pantalla apagada o en segundo plano =====
+let FS = null, servicioActivo = false;
+const ID_SERVICIO = 7001;
+function textoServicio() {
+  const l = ultimaLectura;
+  if (!rxChar) return "Sin conexión con la estación · reintentando…";
+  if (!l || isNaN(l.T)) return "Conectada · esperando la primera lectura";
+  const h = new Date(l.t || Date.now()).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return f(l.T, 1) + " °C · " + f(l.H, 0) + " % · QNH " + f(l.Q, 1) + " hPa · " + h;
+}
+function opcionesServicio() {
+  // serviceType 16 = "dispositivo conectado" (Bluetooth)
+  return { id: ID_SERVICIO, title: "Estación Móvil", body: textoServicio(), smallIcon: "ic_estacion", silent: true, notificationChannelId: "estacion", serviceType: 16 };
+}
+async function iniciarServicio() {
+  if (!NATIVO || servicioActivo) return;
+  try {
+    if (!FS) FS = capacitorExports.registerPlugin("ForegroundService");
+    const p = await conLimite(FS.checkPermissions(), 8000, "sin respuesta");
+    if (!p || p.display !== "granted") { try { await conLimite(FS.requestPermissions(), 60000, "sin respuesta"); } catch (e) {} }
+    await FS.createNotificationChannel({ id: "estacion", name: "Estación conectada", description: "Aviso fijo mientras la app recibe datos de la estación", importance: 2 });
+    await FS.startForegroundService(opcionesServicio());
+    servicioActivo = true;
+    $("estadoFondo").textContent = "✅ Segundo plano activo: la app sigue recibiendo con la pantalla apagada (aviso fijo en la barra de notificaciones).";
+  } catch (e) {
+    $("estadoFondo").textContent = "⚠️ No se pudo activar el segundo plano: " + (e && e.message ? e.message : e);
+    agregarLog("Segundo plano: " + (e && e.message ? e.message : e));
+  }
+}
+function actualizarServicio() {
+  if (!servicioActivo || !FS) return;
+  FS.updateForegroundService(opcionesServicio()).catch(() => {});
+}
+function detenerServicio() {
+  if (!servicioActivo || !FS) return;
+  servicioActivo = false;
+  FS.stopForegroundService().catch(() => {});
+  $("estadoFondo").textContent = "Segundo plano detenido (se activa al conectar).";
+}
+
 function recibirBytes(v) {
   buffer += decoder.decode(v, { stream: true });
   let i;
@@ -1286,6 +1327,7 @@ async function abrirGATT() {
   buffer = "";
   estado("Conectado a " + (dispositivo.name || NOMBRE) + " · llega una lectura por minuto", "on");
   $("btnConectar").textContent = "⏏️ Desconectar";
+  if (NATIVO) { iniciarServicio().then(actualizarServicio); }
   $("btnUltima").disabled = false;
   $("btnPron").disabled = false;
   await pedirUltima();
@@ -1307,12 +1349,14 @@ async function alDesconectar() {
   $("btnUltima").disabled = true;
   $("btnPron").disabled = true;
   $("btnConectar").textContent = "🔵 Conectar Bluetooth";
-  if (manualOff || !dispositivo) { estado("Desconectado", ""); return; }
+  if (manualOff || !dispositivo) { estado("Desconectado", ""); detenerServicio(); return; }
+  actualizarServicio();
   if (reconectando) return;
   reconectando = true;
-  for (let i = 1; i <= 10 && !manualOff; i++) {
-    estado("Se cortó la conexión · reintento " + i + "/10…", "wait");
-    await new Promise(r => setTimeout(r, Math.min(2000 * i, 15000)));
+  const maxReintentos = NATIVO ? 1e9 : 10;        // la app Android reintenta sin límite (cada 30 s como mucho)
+  for (let i = 1; i <= maxReintentos && !manualOff; i++) {
+    estado("Se cortó la conexión · reintento " + i + (NATIVO ? "" : "/10") + "…", "wait");
+    await new Promise(r => setTimeout(r, Math.min(2000 * i, NATIVO ? 30000 : 15000)));
     try { await abrirGATT(); reconectando = false; return; } catch (e) {}
   }
   reconectando = false;
@@ -1783,7 +1827,20 @@ function tonosAlarma() {
     return 1500;
   } catch (e) { return 0; }
 }
+// En la app Android: tono y voz por el canal de ALARMAS (suena con el volumen de alarmas, como el reloj)
+let AV = null;
+function alarmaNativa() {
+  if (!NATIVO || !window.capacitorExports) return null;
+  if (!AV) { try { AV = capacitorExports.registerPlugin("AlarmaVoz"); } catch (e) { return null; } }
+  return AV;
+}
 function avisoHablado(frase) {
+  const nat = alarmaNativa();
+  if (nat) {
+    try { navigator.vibrate && navigator.vibrate([500, 200, 500, 200, 500]); } catch (e) {}
+    nat.hablar({ texto: frase, repeticiones: 2 }).catch(e => agregarLog("Aviso hablado: " + (e && e.message ? e.message : e)));
+    return;
+  }
   const espera = tonosAlarma();
   try { navigator.vibrate && navigator.vibrate([500, 200, 500, 200, 500]); } catch (e) {}
   setTimeout(() => {
@@ -1832,6 +1889,8 @@ function actualizarMediaSession() {
 async function notificar(titulo, cuerpo) {
   try {
     if (document.visibilityState === "visible") return;          // con la app a la vista alcanza el recuadro
+    const nat = alarmaNativa();
+    if (nat) { nat.notificar({ titulo, texto: cuerpo }).catch(() => {}); return; }
     if (!swReg || !("Notification" in window) || Notification.permission !== "granted") return;
     await swReg.showNotification(titulo, { body: cuerpo, tag: "alarma-bme", renotify: true, vibrate: [300, 150, 300, 150, 300] });
   } catch (e) {}
@@ -1885,6 +1944,10 @@ if (leer("bme_fondo", false)) {
 
 // ===== Arranque =====
 $("tipoApp").textContent = NATIVO ? "· app Android" : "· versión web";
+if (NATIVO) {            // en la app Android el segundo plano es un servicio del sistema, automático al conectar
+  $("btnFondo").classList.add("oculto");
+  $("estadoFondo").textContent = "Se activa solo al conectar con la estación.";
+}
 crearBanjo();
 crearNautico();
 aplicarEstilo(estiloInst);
