@@ -1,0 +1,1284 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Estación Móvil BME280</title>
+<link rel="manifest" id="manifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0f172a; --card:#1e293b; --card2:#273449; --txt:#e2e8f0; --sub:#94a3b8;
+    --acc:#38bdf8; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444; --line:#334155;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f1f5f9; --card:#ffffff; --card2:#f8fafc; --txt:#0f172a; --sub:#64748b; --line:#e2e8f0; --acc:#0284c7; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--txt);
+       padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+  header{display:flex;align-items:center;gap:10px;padding:14px 16px 6px}
+  header h1{font-size:18px;margin:0;flex:1}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--err);flex:none}
+  .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .dot.wait{background:var(--warn)}
+  main{padding:8px 14px 90px;max-width:640px;margin:0 auto}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
+  button{font:inherit;font-size:15px;border:0;border-radius:12px;padding:11px 14px;background:var(--acc);color:#fff;cursor:pointer}
+  button.sec{background:var(--card2);color:var(--txt);border:1px solid var(--line)}
+  button:disabled{opacity:.45}
+  .estado{font-size:13px;color:var(--sub);margin:-4px 2px 10px}
+  .hora{font-size:13px;color:var(--sub);margin:2px 2px 10px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .card{background:var(--card);border-radius:16px;padding:14px;border:1px solid var(--line)}
+  .card .lbl{font-size:13px;color:var(--sub)}
+  .card .val{font-size:30px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
+  .card .val small{font-size:15px;font-weight:500;color:var(--sub);margin-left:3px}
+  .card .ext{font-size:12px;color:var(--sub);margin-top:4px}
+  .big{grid-column:1/-1}
+  .ext{font-size:12px;color:var(--sub)}
+  .inst{padding:6px 4px 2px}
+  .inst svg{height:auto;aspect-ratio:200/178}
+  .inst.big svg{max-width:300px;margin:0 auto}
+  .aguja{transform-box:view-box;transform-origin:100px 100px;transition:transform 1.2s cubic-bezier(.3,1.4,.5,1)}
+  .fantasma{transform-box:view-box;transform-origin:100px 100px;transition:transform 1.2s ease}
+  .esfera{fill:var(--card2);stroke:var(--line);stroke-width:2}
+  .marca{stroke:var(--txt);stroke-linecap:round}
+  .num{fill:var(--txt);font-size:12px;font-weight:600;text-anchor:middle;font-variant-numeric:tabular-nums}
+  .palabra{fill:var(--sub);font-size:7.5px;font-weight:700;text-anchor:middle;letter-spacing:.5px}
+  .dig{fill:var(--txt);font-size:19px;font-weight:700;text-anchor:middle;font-variant-numeric:tabular-nums}
+  .tit{fill:var(--sub);font-size:11px;text-anchor:middle}
+  .inst svg.v{aspect-ratio:1/1}
+
+  /* ===== Estilo vintage 1950: madera, bronce y marfil ===== */
+  body.vintage{
+    --bg:#1c130d; --card:#3b2717; --card2:#2b1c12; --txt:#f3e6c4; --sub:#c8b28a;
+    --acc:#b8862b; --line:#5c4029; --ok:#7fa86a; --warn:#d6a03c; --err:#c0503a;
+    background:radial-gradient(ellipse at top,#3a2617 0%,#1c130d 70%);
+    font-family:"Playfair Display",Georgia,"Times New Roman",serif;
+  }
+  body.vintage header h1{font-style:italic;letter-spacing:.5px}
+  body.vintage .card{background:
+      repeating-linear-gradient(92deg,rgba(255,255,255,.025) 0 2px,transparent 2px 9px),
+      linear-gradient(160deg,#4a301c,#2e1d11);
+    border:1px solid #6b4a2c; box-shadow:inset 0 1px 0 rgba(255,220,160,.15),0 4px 10px rgba(0,0,0,.45)}
+  body.vintage button{background:linear-gradient(#d9b25a,#9c6f1e);color:#2a1a0a;border:1px solid #7a5416;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.35)}
+  body.vintage button.sec,body.vintage .tabs button{background:linear-gradient(#3e2a1a,#2b1c12);color:var(--txt);border:1px solid #6b4a2c}
+  body.vintage .tabs button.act{background:linear-gradient(#d9b25a,#9c6f1e);color:#2a1a0a}
+  .v .numv{fill:#2a1d12;font-family:"Playfair Display",Georgia,serif;font-size:13px;font-weight:700;text-anchor:middle}
+  .v .palv{fill:#4a3420;font-family:"Playfair Display",Georgia,serif;font-style:italic;font-size:9px;text-anchor:middle}
+  .v .titv{fill:#3b2a1a;font-family:"Playfair Display",Georgia,serif;font-size:8.5px;font-weight:700;letter-spacing:1.6px;text-anchor:middle}
+  .v .unv{fill:#5a4430;font-family:"Playfair Display",Georgia,serif;font-style:italic;font-size:9px;text-anchor:middle}
+  .v .digv{fill:#f5e9c8;font-family:"Courier New",ui-monospace,monospace;font-size:12.5px;font-weight:700;text-anchor:middle;letter-spacing:1px}
+  .tabs{display:flex;gap:6px;margin:18px 0 10px}
+  .tabs button{flex:1;background:var(--card2);color:var(--sub);border:1px solid var(--line);padding:9px 6px;font-size:14px}
+  .tabs button.act{background:var(--acc);color:#fff;border-color:var(--acc)}
+  .graf{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px 10px 4px;margin-bottom:10px}
+  .graf h3{font-size:13px;color:var(--sub);margin:2px 4px 6px;font-weight:600;display:flex;justify-content:space-between}
+  svg{width:100%;height:150px;display:block}
+  .vacio{color:var(--sub);font-size:14px;text-align:center;padding:24px 8px}
+  .log{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px 12px;font-family:ui-monospace,Menlo,monospace;
+       font-size:12px;max-height:260px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+  .log div{padding:3px 0;border-bottom:1px solid var(--line)}
+  .log div:last-child{border:0}
+  label{display:block;font-size:13px;color:var(--sub);margin:10px 2px 4px}
+  input{width:100%;font:inherit;font-size:16px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--txt)}
+  .aviso{background:var(--card);border-left:4px solid var(--warn);border-radius:10px;padding:10px 12px;font-size:14px;margin:8px 0}
+  .oculto{display:none}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center;z-index:10;
+         padding:0 0 env(safe-area-inset-bottom)}
+  .modal.oculto{display:none}
+  .toque{position:fixed;inset:0;z-index:20;background:rgba(10,8,6,.82);display:flex;align-items:center;justify-content:center;
+         backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);cursor:pointer}
+  .toque.oculto{display:none}
+  .toque-caja{text-align:center;padding:30px;animation:latido 1.8s ease-in-out infinite}
+  .toque-tit{font-size:24px;font-weight:700;margin-top:10px}
+  @keyframes latido{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+  .modal .caja{background:var(--card);width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:18px 16px 14px;
+               border:1px solid var(--line);max-height:92vh;overflow:auto;animation:sube .25s ease}
+  @keyframes sube{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+  .modal h2{margin:0 0 8px;font-size:18px}
+  .modal .actual{font-size:15px;margin:8px 2px}
+  details{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+  summary{cursor:pointer;color:var(--acc);font-size:14px}
+  .pron{font-size:15px;line-height:1.55}
+  .pron .cab{font-size:13px;color:var(--sub);margin-bottom:8px}
+  .pron .seg{padding:7px 0;border-bottom:1px solid var(--line)}
+  .pron .seg:last-child{border:0}
+  .pron .etq{font-weight:700;color:var(--acc)}
+  .pron .bloque{margin-top:10px;padding:10px;border-radius:10px;background:var(--card2);font-size:14px}
+  .pron .alerta{background:rgba(239,68,68,.15);border-left:4px solid var(--err);padding:8px 10px;border-radius:8px;margin:8px 0}
+  .alr{border-radius:14px;padding:11px 13px;margin:0 0 10px;font-size:14px;line-height:1.45;border:1px solid transparent}
+  .alr .t{font-weight:700;font-size:15px;margin-bottom:3px}
+  .alr .s{font-size:12px;opacity:.75;margin-top:4px}
+  .alr.oficial{background:rgba(220,38,38,.18);border-color:#dc2626}
+  .alr.local{background:rgba(245,158,11,.16);border-color:#d97706}
+  .alr.movil{background:rgba(234,179,8,.13);border-color:#ca8a04}
+  .alr.ok{background:rgba(34,197,94,.10);border-color:rgba(34,197,94,.35);padding:7px 12px;font-size:13px}
+  .alr.oficial .t{animation:parpadeo 1.6s ease-in-out infinite}
+  @keyframes parpadeo{50%{opacity:.55}}
+  .tend-up{color:var(--ok)} .tend-down{color:var(--err)}
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="dot"></span>
+  <h1>Estación Móvil · BME280</h1>
+</header>
+
+<main>
+  <div class="row">
+    <button id="btnConectar">🔵 Conectar Bluetooth</button>
+    <button id="btnUltima" class="sec" disabled>↻ Última</button>
+  </div>
+  <div class="estado" id="estado">Desconectado</div>
+  <div id="avisoBT" class="aviso oculto"></div>
+  <div id="alarmas"></div>
+
+  <div class="hora" id="hora">Sin lecturas todavía</div>
+
+  <div class="grid">
+    <div class="card inst" id="gT"></div>
+    <div class="card inst" id="gH"></div>
+    <div class="card inst" id="gR"></div>
+    <div class="card inst" id="gP"></div>
+    <div class="card inst big" id="gQ"></div>
+  </div>
+  <div class="row" style="justify-content:center;margin-top:10px">
+    <button class="sec" id="btnAlt">📍 <b id="lugarBtn">Casa</b> · ⛰️ <b id="altBtn">-- m</b> · cambiar</button>
+  </div>
+  <div class="ext" id="extQ" style="text-align:center;margin-top:6px"></div>
+  <div class="ext" id="extT" style="text-align:center"></div>
+  <div class="ext" id="extP" style="text-align:center"></div>
+
+  <div class="tabs">
+    <button data-tab="vivo" class="act">En vivo</button>
+    <button data-tab="ts">ThingSpeak</button>
+    <button data-tab="pron">Pronóstico</button>
+    <button data-tab="cfg">⚙️</button>
+  </div>
+
+  <section id="tab-vivo">
+    <div id="graficosVivo"></div>
+    <div class="row"><button class="sec" id="btnBorrar">Borrar historial en vivo</button></div>
+  </section>
+
+  <section id="tab-ts" class="oculto">
+    <div class="row">
+      <button id="btnTS">⬇️ Cargar últimas 24 h</button>
+    </div>
+    <div class="estado" id="estadoTS">Configurá el canal en ⚙️ y tocá “Cargar”.</div>
+    <div id="graficosTS"></div>
+  </section>
+
+  <section id="tab-pron" class="oculto">
+    <div class="row">
+      <button id="btnPron" disabled>↻ Pedir pronóstico</button>
+    </div>
+    <div class="estado" id="estadoPron">El pronóstico llega de la estación por Bluetooth (el mismo de Telegram y Base44).</div>
+    <div class="card pron" id="pron"><div class="vacio">Todavía no llegó ningún pronóstico.</div></div>
+    <details style="margin-top:12px">
+      <summary>Avisos de la estación</summary>
+      <div class="log" id="log" style="margin-top:8px"><div>Sin mensajes</div></div>
+    </details>
+  </section>
+
+  <section id="tab-cfg" class="oculto">
+    <div class="card" style="margin-bottom:10px">
+      <b>Segundo plano</b>
+      <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
+        aunque la pantalla esté apagada o uses otra aplicación.</p>
+      <div class="row"><button class="sec" id="btnFondo">🌙 Activar segundo plano</button></div>
+      <div class="estado" id="estadoFondo"></div>
+    </div>
+    <div class="card" style="margin-bottom:10px">
+      <b>Estilo de los instrumentos</b>
+      <div class="row" style="margin-top:10px">
+        <button class="sec" id="estVintage">🕰️ Vintage 1950</button>
+        <button class="sec" id="estModerno">📱 Moderno</button>
+      </div>
+    </div>
+    <div class="card">
+      <b>Canal ThingSpeak del BME280 móvil</b>
+      <label for="cfgCanal">Channel ID</label>
+      <input id="cfgCanal" inputmode="numeric" placeholder="1234567">
+      <label for="cfgKey">Read API Key (solo si el canal es privado)</label>
+      <input id="cfgKey" autocapitalize="off" autocomplete="off" placeholder="XXXXXXXXXXXXXXXX">
+      <div class="row" style="margin-top:12px"><button id="btnGuardar">Guardar</button></div>
+      <div class="estado" id="estadoCfg">Se guarda sola al escribir, solo en este teléfono.</div>
+    </div>
+  </section>
+</main>
+
+<div id="toque" class="toque oculto">
+  <div class="toque-caja">
+    <div style="font-size:54px">🔵</div>
+    <div class="toque-tit">Tocá para conectar</div>
+    <div class="estado" style="margin:6px 0 0">con la Estación Móvil por Bluetooth</div>
+    <button class="sec" id="toqueLuego" style="margin-top:22px">Ahora no</button>
+  </div>
+</div>
+
+<div id="modalAlt" class="modal oculto" role="dialog" aria-modal="true" aria-labelledby="tituloAlt">
+  <div class="caja">
+    <h2 id="tituloAlt">📍 Ubicación de la estación</h2>
+    <p class="estado" style="margin:0 0 6px">Con las coordenadas del lugar, la estación pide las alertas del SMN, el pronóstico
+      y los modelos para <b>ese lugar</b>, y usa el sensor BME280 móvil para las mediciones.</p>
+    <div class="actual">Ahora: <b id="lugarActual">--</b></div>
+
+    <label for="lugarNombre">Nombre del lugar</label>
+    <input id="lugarNombre" maxlength="30" placeholder="ej. Villa Carlos Paz">
+    <div class="row" style="gap:8px">
+      <div style="flex:1;min-width:120px"><label for="lugarLat">Latitud</label>
+        <input id="lugarLat" type="number" inputmode="decimal" step="0.0001" placeholder="-31.4241"></div>
+      <div style="flex:1;min-width:120px"><label for="lugarLon">Longitud</label>
+        <input id="lugarLon" type="number" inputmode="decimal" step="0.0001" placeholder="-64.4978"></div>
+    </div>
+    <div class="row">
+      <button class="sec" id="btnGPS">🛰️ Usar el GPS del teléfono</button>
+    </div>
+    <div class="estado" id="gpsEstado"></div>
+
+    <h3 style="margin:14px 0 2px;font-size:16px">⛰️ Altura para el QNH</h3>
+    <div class="actual">Ahora: <b id="altActual">-- m</b></div>
+
+    <label for="altNueva">Altura (metros sobre el nivel del mar): terreno + altura del sensor</label>
+    <input id="altNueva" type="number" inputmode="decimal" step="1" min="-100" max="5000" placeholder="ej. 650">
+    <div class="estado" id="altTerreno"></div>
+    <div class="row" style="margin-top:10px">
+      <button id="btnAltGuardar">💾 Guardar lugar y altura</button>
+      <button class="sec" id="btnAltCasa">🏠 Volver a casa</button>
+    </div>
+
+    <details>
+      <summary>¿No sabés la altura? Calcularla con el QNH oficial</summary>
+      <p class="estado" style="margin:6px 0">Buscá el QNH del aeropuerto o estación del SMN más cercana
+        (METAR) y escribilo: la app calcula la altura con la presión que mide el sensor ahora.</p>
+      <label for="qnhRef">QNH de referencia (hPa)</label>
+      <input id="qnhRef" type="number" inputmode="decimal" step="0.1" placeholder="ej. 1013.2">
+      <div class="actual" id="altCalc">Presión del sensor: -- hPa</div>
+      <div class="row"><button class="sec" id="btnUsarCalc" disabled>Usar esta altura</button></div>
+    </details>
+
+    <div class="estado" id="altEstado" style="min-height:1.2em"></div>
+    <div class="row" style="justify-content:flex-end"><button class="sec" id="btnAltCerrar">Cerrar</button></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+// ===== Bluetooth: servicio UART de Nordic (igual que en la placa) =====
+const NUS  = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const NUS_RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";  // teléfono -> placa
+const NUS_TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";  // placa -> teléfono
+const NOMBRE = "Estacion-Movil";
+
+const $ = id => document.getElementById(id);
+let dispositivo = null, rxChar = null, buffer = "", reconectando = false, manualOff = false;
+const decoder = new TextDecoder();
+
+// ===== almacenamiento local (con try/catch: puede no estar disponible) =====
+const guardar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+const leer = (k, def) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch (e) { return def; } };
+
+let historial = leer("bme_hist", []);           // lecturas en vivo: {t, T, H, R, P, Q}
+const MAX_HIST_MS = 24 * 3600 * 1000;
+
+// ===== Manifest para "Agregar a pantalla de inicio" =====
+(function () {
+  const icono = "data:image/svg+xml," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0f172a"/>' +
+    '<path d="M28 12a6 6 0 0 1 12 0v24a11 11 0 1 1-12 0z" fill="none" stroke="#38bdf8" stroke-width="4"/>' +
+    '<circle cx="34" cy="45" r="6" fill="#38bdf8"/></svg>');
+  const m = { name: "Estación Móvil BME280", short_name: "BME Móvil", display: "standalone",
+              background_color: "#0f172a", theme_color: "#0f172a", start_url: location.href,
+              icons: [{ src: icono, sizes: "any", type: "image/svg+xml" }] };
+  $("manifest").href = "data:application/manifest+json," + encodeURIComponent(JSON.stringify(m));
+})();
+
+// ===== Interfaz =====
+function estado(txt, tipo) {
+  $("estado").textContent = txt;
+  $("dot").className = "dot" + (tipo === "on" ? " on" : tipo === "wait" ? " wait" : "");
+}
+
+function agregarLog(linea) {
+  const log = $("log");
+  if (log.firstChild && log.firstChild.textContent === "Sin mensajes") log.innerHTML = "";
+  const d = document.createElement("div");
+  const h = new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  d.textContent = h + "  " + linea;
+  log.prepend(d);
+  while (log.children.length > 200) log.lastChild.remove();
+}
+
+document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("act", x === b));
+  ["vivo", "ts", "pron", "cfg"].forEach(t => $("tab-" + t).classList.toggle("oculto", t !== b.dataset.tab));
+  guardar("bme_tab", b.dataset.tab);
+}));
+
+// ===== Instrumentos analógicos (SVG) =====
+// Esfera de 270°: el mínimo abajo a la izquierda, el máximo abajo a la derecha.
+const CX = 100, CY = 100;
+function pto(r, ang) { const a = ang * Math.PI / 180; return [CX + r * Math.sin(a), CY - r * Math.cos(a)]; }
+function arco(r, a1, a2) {
+  const [x1, y1] = pto(r, a1), [x2, y2] = pto(r, a2);
+  return "M" + x1.toFixed(2) + " " + y1.toFixed(2) + " A" + r + " " + r + " 0 " + (a2 - a1 > 180 ? 1 : 0) + " 1 " + x2.toFixed(2) + " " + y2.toFixed(2);
+}
+
+const instrumentos = {};
+
+// ===== Estilo de los instrumentos: "vintage" (1950) o "moderno" =====
+let estiloInst = leer("bme_estilo", "vintage");
+const SEPIA = { "#3b82f6": "#2c4a6e", "#6366f1": "#3a3f6e", "#38bdf8": "#4f7a8c", "#22c55e": "#3f6b3a",
+                "#f59e0b": "#a8741c", "#ef4444": "#8e1f1a" };
+
+function crearInstrumento(id, c) {
+  if (estiloInst === "vintage") crearVintage(id, c); else crearModerno(id, c);
+}
+
+function crearVintage(id, c) {
+  const ang = v => -135 + 270 * (Math.min(Math.max(v, c.min), c.max) - c.min) / (c.max - c.min);
+  const u = id;   // ids únicos para los degradados de cada instrumento
+  let g = '<svg class="v" viewBox="0 0 200 200" role="img" aria-label="' + c.titulo + '"><defs>' +
+    '<radialGradient id="bz' + u + '" cx="35%" cy="30%" r="80%"><stop offset="0" stop-color="#fbe7a8"/><stop offset=".45" stop-color="#c9973a"/>' +
+      '<stop offset=".8" stop-color="#7a5418"/><stop offset="1" stop-color="#4a3108"/></radialGradient>' +
+    '<radialGradient id="fc' + u + '" cx="45%" cy="40%" r="75%"><stop offset="0" stop-color="#fbf4df"/><stop offset=".7" stop-color="#efe2bf"/>' +
+      '<stop offset="1" stop-color="#d9c596"/></radialGradient>' +
+    '<linearGradient id="gl' + u + '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".45"/>' +
+      '<stop offset=".45" stop-color="#fff" stop-opacity=".06"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>' +
+    '<radialGradient id="hb' + u + '" cx="35%" cy="35%" r="70%"><stop offset="0" stop-color="#fbe7a8"/><stop offset="1" stop-color="#6b4a12"/></radialGradient>' +
+    '</defs>';
+  // bisel de bronce, aro oscuro y esfera de marfil
+  g += '<circle cx="100" cy="100" r="98" fill="#1a110a"/>';
+  g += '<circle cx="100" cy="100" r="96" fill="url(#bz' + u + ')"/>';
+  g += '<circle cx="100" cy="100" r="88" fill="#3a2614"/>';
+  g += '<circle cx="100" cy="100" r="86.5" fill="url(#fc' + u + ')"/>';
+  g += '<circle cx="100" cy="100" r="80" fill="none" stroke="#2a1d12" stroke-width=".6" opacity=".6"/>';
+  // zonas en tonos apagados
+  for (const [d, h, col] of c.bandas || [])
+    g += '<path d="' + arco(70, ang(d), ang(h)) + '" stroke="' + (SEPIA[col] || col) + '" stroke-width="3.2" fill="none" opacity=".8"/>';
+  // marcas y números
+  const nSub = Math.round((c.max - c.min) / c.sub);
+  for (let i = 0; i <= nSub; i++) {
+    const v = c.min + i * c.sub, a = ang(v);
+    const mayor = Math.abs((v - c.min) / c.paso - Math.round((v - c.min) / c.paso)) < 1e-6;
+    const medio = !mayor && Math.abs((v - c.min) / (c.paso / 2) - Math.round((v - c.min) / (c.paso / 2))) < 1e-6;
+    const [x1, y1] = pto(mayor ? 71 : medio ? 74 : 76, a), [x2, y2] = pto(80, a);
+    g += '<line x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) +
+         '" stroke="#2a1d12" stroke-linecap="butt" stroke-width="' + (mayor ? 2 : medio ? 1.2 : .7) + '"/>';
+    if (mayor) {
+      const [tx, ty] = pto(c.palabras ? 61 : 59, a);
+      g += '<text class="numv" x="' + tx.toFixed(1) + '" y="' + (ty + 4.5).toFixed(1) + '">' + Math.round(v) + "</text>";
+    }
+  }
+  for (const [v, txt] of c.palabras || []) {
+    const [tx, ty] = pto(41, ang(v));
+    const t = txt.charAt(0) + txt.slice(1).toLowerCase();
+    g += '<text class="palv" x="' + tx.toFixed(1) + '" y="' + (ty + 3).toFixed(1) + '">' + t + "</text>";
+  }
+  // rótulo grabado y contador mecánico
+  const tit = c.titulo.replace(/ QNH$/, "").toUpperCase();
+  g += '<text class="titv" x="100" y="' + (c.palabras ? 175 : 128) + '">' + tit + "</text>";
+  g += '<rect x="71" y="' + (c.palabras ? 134 : 136) + '" width="58" height="18" rx="2" fill="#1b130c" stroke="#8a6326" stroke-width="1.2"/>';
+  g += '<text class="digv dig" x="100" y="' + (c.palabras ? 147.5 : 149.5) + '">--</text>';
+  g += '<text class="unv" x="100" y="' + (c.palabras ? 163.5 : 168) + '">' + c.unidad + "</text>";
+  // aguja de referencia (bronce) para el barómetro
+  if (c.fantasma)
+    g += '<g class="fantasma" style="transform:rotate(-135deg)" opacity="0">' +
+         '<polygon points="100,18 101.6,100 98.4,100" fill="#a8761f"/><polygon points="100,14 103.5,24 96.5,24" fill="#a8761f"/></g>';
+  // aguja negra con contrapeso
+  g += '<g class="aguja" style="transform:rotate(-135deg)">' +
+       '<polygon points="100,19 101.4,96 100,100 98.6,96" fill="#120c07"/>' +
+       '<polygon points="98.8,100 101.2,100 101.6,122 98.4,122" fill="#120c07"/>' +
+       '<circle cx="100" cy="122" r="4.2" fill="#120c07"/></g>';
+  g += '<circle cx="100" cy="100" r="6.5" fill="url(#hb' + u + ')" stroke="#3a2614" stroke-width=".8"/>';
+  g += '<circle cx="100" cy="100" r="1.6" fill="#3a2614"/>';
+  // reflejo del vidrio
+  g += '<path d="M30 80 A72 72 0 0 1 150 32 A86 86 0 0 0 30 80 Z" fill="url(#gl' + u + ')"/>';
+  g += '<ellipse cx="72" cy="58" rx="40" ry="18" transform="rotate(-32 72 58)" fill="url(#gl' + u + ')" opacity=".6"/>';
+  g += "</svg>";
+  $(id).innerHTML = g;
+  const svg = $(id).querySelector("svg");
+  instrumentos[id] = { c, ang, aguja: svg.querySelector(".aguja"), fantasma: svg.querySelector(".fantasma"), dig: svg.querySelector(".dig") };
+}
+
+function crearModerno(id, c) {
+  // c = {titulo, unidad, min, max, paso, sub, dec, bandas:[[desde,hasta,color]], palabras:[[valor,"texto"]], fantasma}
+  const ang = v => -135 + 270 * (Math.min(Math.max(v, c.min), c.max) - c.min) / (c.max - c.min);
+  let g = '<svg viewBox="0 0 200 178" role="img" aria-label="' + c.titulo + '">';
+  g += '<circle class="esfera" cx="100" cy="100" r="92"/>';
+  for (const [d, h, col] of c.bandas || [])
+    g += '<path d="' + arco(76, ang(d), ang(h)) + '" stroke="' + col + '" stroke-width="9" fill="none" opacity=".85"/>';
+  const nSub = Math.round((c.max - c.min) / c.sub);
+  for (let i = 0; i <= nSub; i++) {
+    const v = c.min + i * c.sub, a = ang(v);
+    const mayor = Math.abs((v - c.min) / c.paso - Math.round((v - c.min) / c.paso)) < 1e-6;
+    const [x1, y1] = pto(mayor ? 82 : 85, a), [x2, y2] = pto(90, a);
+    g += '<line class="marca" x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) +
+         '" stroke-width="' + (mayor ? 2.2 : 1) + '"/>';
+    if (mayor) {
+      const [tx, ty] = pto(c.palabras ? 66 : 63, a);
+      g += '<text class="num" x="' + tx.toFixed(1) + '" y="' + (ty + 4).toFixed(1) + '">' + Math.round(v) + "</text>";
+    }
+  }
+  for (const [v, txt] of c.palabras || []) {
+    const [tx, ty] = pto(42, ang(v));
+    g += '<text class="palabra" x="' + tx.toFixed(1) + '" y="' + (ty + 3).toFixed(1) + '">' + txt + "</text>";
+  }
+  if (c.fantasma)
+    g += '<g class="fantasma" style="transform:rotate(-135deg)" opacity="0"><polygon points="100,22 103,100 97,100" fill="#eab308"/></g>';
+  g += '<g class="aguja" style="transform:rotate(-135deg)">' +
+       '<polygon points="100,16 104.5,100 100,112 95.5,100" fill="#ef4444"/></g>' +
+       '<circle cx="100" cy="100" r="7" fill="var(--txt)"/><circle cx="100" cy="100" r="2.5" fill="var(--card2)"/>';
+  g += '<text class="dig" x="100" y="140">--</text>';
+  g += '<text class="tit" x="100" y="171">' + c.titulo + " (" + c.unidad + ")</text></svg>";
+  $(id).innerHTML = g;
+  const svg = $(id).querySelector("svg");
+  instrumentos[id] = { c, ang, aguja: svg.querySelector(".aguja"), fantasma: svg.querySelector(".fantasma"), dig: svg.querySelector(".dig") };
+}
+
+function fijarInstrumento(id, v, vFantasma) {
+  const k = instrumentos[id];
+  if (!k) return;
+  if (isNaN(v)) { k.dig.textContent = "--"; return; }
+  k.aguja.style.transform = "rotate(" + k.ang(v).toFixed(1) + "deg)";
+  k.dig.textContent = v.toFixed(k.c.dec);
+  if (k.fantasma) {
+    if (vFantasma === undefined || isNaN(vFantasma)) k.fantasma.setAttribute("opacity", "0");
+    else { k.fantasma.setAttribute("opacity", ".9"); k.fantasma.style.transform = "rotate(" + k.ang(vFantasma).toFixed(1) + "deg)"; }
+  }
+}
+
+function crearInstrumentos() {
+  crearInstrumento("gT", { titulo: "Temperatura", unidad: "°C", min: -10, max: 45, paso: 10, sub: 2.5, dec: 1,
+    bandas: [[-10, 0, "#3b82f6"], [0, 10, "#38bdf8"], [10, 28, "#22c55e"], [28, 35, "#f59e0b"], [35, 45, "#ef4444"]] });
+  crearInstrumento("gH", { titulo: "Humedad", unidad: "%", min: 0, max: 100, paso: 20, sub: 5, dec: 0,
+    bandas: [[0, 30, "#f59e0b"], [30, 70, "#22c55e"], [70, 90, "#38bdf8"], [90, 100, "#3b82f6"]] });
+  crearInstrumento("gR", { titulo: "Punto de rocío", unidad: "°C", min: -10, max: 30, paso: 10, sub: 2, dec: 1,
+    bandas: [[-10, 10, "#38bdf8"], [10, 16, "#22c55e"], [16, 21, "#f59e0b"], [21, 30, "#ef4444"]] });
+  crearRangoPresion(957);
+  // Barómetro clásico: aguja roja = ahora, aguja amarilla = hace 3 h
+  crearInstrumento("gQ", { titulo: "Barómetro QNH", unidad: "hPa", min: 960, max: 1050, paso: 20, sub: 2, dec: 1, fantasma: true,
+    bandas: [[960, 985, "#6366f1"], [985, 1005, "#38bdf8"], [1005, 1020, "#22c55e"], [1020, 1050, "#f59e0b"]],
+    palabras: [[968, "TORMENTA"], [990, "LLUVIA"], [1010, "VARIABLE"], [1030, "BUEN TIEMPO"], [1046, "SECO"]] });
+}
+
+// La presión de estación depende de la altura del lugar: la escala se arma alrededor del valor medido
+let rangoP = null;
+function crearRangoPresion(p) {
+  const min = Math.floor((p - 40) / 10) * 10;
+  rangoP = [min, min + 80];
+  crearInstrumento("gP", { titulo: "Presión estación", unidad: "hPa", min, max: min + 80, paso: 20, sub: 5, dec: 1, bandas: [] });
+}
+
+// ===== Lectura de una línea de la placa =====
+// [BME280] 13/11/2026 16:22:00 ART | T 27.4 C | HR 41 % | Rocio 13.0 C | P 957.8 hPa | QNH 1009.6 hPa (alt 452 m) | #3
+function num(re, s) { const m = s.match(re); return m ? parseFloat(m[1]) : NaN; }
+
+// ----- Pronóstico IA recibido por Bluetooth -----
+let colectandoPron = false, lineasPron = [], horaPron = "";
+// ----- Alertas de la estación recibidas por Bluetooth -----
+let colectandoAlerta = false, lineasAlerta = [], tipoAlerta = "";
+
+function procesarLinea(linea) {
+  const lt = linea.trim();
+  if (colectandoAlerta) {
+    if (lt.startsWith("[ALERTA] FIN")) {
+      colectandoAlerta = false;
+      alertaEstacion = { tipo: tipoAlerta, texto: lineasAlerta.join("\n"), recibida: Date.now() };
+      guardar("bme_alerta", alertaEstacion);
+      dibujarAlarmas();
+    } else if (lt) lineasAlerta.push(lt);
+    return;
+  }
+  if (lt.startsWith("[ALERTA] INICIO")) { colectandoAlerta = true; lineasAlerta = []; tipoAlerta = lt.slice(15).trim() || "local"; return; }
+  if (lt.startsWith("[ALERTA] NINGUNA")) {
+    alertaEstacion = { tipo: "ninguna", texto: "", recibida: Date.now() };
+    guardar("bme_alerta", alertaEstacion);
+    dibujarAlarmas();
+    return;
+  }
+  if (colectandoPron) {
+    if (linea.trim().startsWith("[PRON] FIN")) {
+      colectandoPron = false;
+      const p = { texto: lineasPron.join("\n"), hora: horaPron, recibido: Date.now() };
+      guardar("bme_pron", p);
+      mostrarPronostico(p);
+      $("estadoPron").textContent = "✅ Pronóstico recibido " + new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+    } else lineasPron.push(linea.replace(/\r$/, ""));
+    return;
+  }
+  if (linea.trim().startsWith("[PRON] INICIO")) {
+    colectandoPron = true; lineasPron = []; horaPron = linea.trim().slice(13).trim();
+    $("estadoPron").textContent = "Recibiendo pronóstico…";
+    return;
+  }
+  if (linea.trim().startsWith("[PRON] VACIO")) {
+    $("estadoPron").textContent = "La estación todavía no generó un pronóstico IA.";
+    return;
+  }
+  linea = linea.trim();
+  if (!linea) return;
+  if (linea.startsWith("[H] ")) {
+    if (linea.startsWith("[H] FIN")) {
+      if (histNuevas) {
+        historial.sort((a, b) => a.t - b.t);
+        const corte = Date.now() - MAX_HIST_MS;
+        historial = historial.filter(x => x.t >= corte);
+        guardar("bme_hist", historial);
+        dibujarVivo();
+        if (ultimaLectura) mostrarLectura(ultimaLectura);
+        agregarLog("Se recuperaron " + histNuevas + " lecturas guardadas en la estación");
+      }
+      histNuevas = 0;
+      return;
+    }
+    const v = linea.slice(4).split(",").map(parseFloat);
+    if (v.length >= 4 && !v.some(isNaN)) {
+      const t = v[0] * 1000;
+      if (!historial.some(x => Math.abs(x.t - t) < 40000)) {
+        const alt = isNaN(altEstacion) ? 452 : altEstacion;
+        const g = Math.log(v[2] / 100) + 17.62 * v[1] / (243.12 + v[1]);
+        const d = new Date(t), p2 = n => String(n).padStart(2, "0");
+        historial.push({ t, T: v[1], H: v[2], P: v[3], R: v[2] > 0 ? 243.12 * g / (17.62 - g) : NaN,
+          Q: v[3] * Math.pow(1 - 0.0065 * alt / 288.15, -5.25588),
+          hora: p2(d.getDate()) + "/" + p2(d.getMonth() + 1) + "/" + d.getFullYear() + " " + p2(d.getHours()) + ":" + p2(d.getMinutes()) + ":" + p2(d.getSeconds()) + " ART" });
+        histNuevas++;
+      }
+    }
+    return;
+  }
+  if (linea.startsWith("[UBIC]")) {
+    const m = linea.match(/^\[UBIC\]\s+(movil|casa)\s+(-?[\d.]+)\s+(-?[\d.]+)\s*(.*)$/);
+    if (m) {
+      mostrarUbicacion({ modo: m[1], lat: parseFloat(m[2]), lon: parseFloat(m[3]), nombre: m[4] || "" });
+      $("altEstado").textContent = "📍 Lugar: " + (m[1] === "casa" ? "casa" : m[4]) + " ✔";
+    }
+    agregarLog(linea);
+    return;
+  }
+  if (linea.startsWith("[ALT]")) {
+    const a = num(/Altitud(?: actual)?\s+(-?[\d.]+)\s*m/, linea);
+    mostrarAltura(a);
+    $("altEstado").textContent = linea.replace("[ALT]", "").trim();
+    agregarLog(linea);
+    return;
+  }
+  const T = num(/\|\s*T\s+(-?[\d.]+)\s*C/, linea);
+  const Q = num(/QNH\s+(-?[\d.]+)\s*hPa/, linea);
+  if (linea.startsWith("[BME280]") && !isNaN(T) && !isNaN(Q)) {
+    const lect = {
+      t: Date.now(),
+      hora: (linea.match(/^\[BME280\]\s*([^|]+?)\s*\|/) || [])[1] || "",
+      T, Q,
+      H: num(/HR\s+(-?[\d.]+)\s*%/, linea),
+      R: num(/Rocio\s+(-?[\d.]+)\s*C/, linea),
+      P: num(/\|\s*P\s+(-?[\d.]+)\s*hPa/, linea),
+      alt: num(/alt\s+(-?[\d.]+)\s*m/, linea)
+    };
+    // la misma lectura puede llegar dos veces (comando "Última"): no duplicar en el historial
+    const ult = historial[historial.length - 1];
+    if (!ult || ult.hora !== lect.hora) {
+      historial.push({ t: lect.t, T: lect.T, H: lect.H, R: lect.R, P: lect.P, Q: lect.Q, hora: lect.hora });
+      const corte = Date.now() - MAX_HIST_MS;
+      historial = historial.filter(x => x.t >= corte);
+      guardar("bme_hist", historial);
+    }
+    mostrarLectura(lect);
+    dibujarVivo();
+  } else {
+    agregarLog(linea);
+  }
+}
+
+function f(v, d) { return isNaN(v) ? "--" : v.toFixed(d); }
+
+let ultimaLectura = null;
+function mostrarLectura(l) {
+  ultimaLectura = l;
+  actualizarMediaSession();
+  alarmasMovil = calcularAlarmasMovil(l);
+  setTimeout(dibujarAlarmas, 0);
+  if (!isNaN(l.alt)) mostrarAltura(l.alt);
+  if (!isNaN(l.P)) { ultimaP = l.P; if (!$("modalAlt").classList.contains("oculto")) actualizarCalc(); }
+  if (!isNaN(l.P) && (l.P < rangoP[0] + 5 || l.P > rangoP[1] - 5)) crearRangoPresion(l.P);
+  const ref3h = historial.filter(x => x.t <= l.t - 3 * 3600e3 + 10 * 60e3 && x.t >= l.t - 3 * 3600e3 - 20 * 60e3);
+  const q3h = ref3h.length ? ref3h[ref3h.length - 1].Q : NaN;
+  fijarInstrumento("gT", l.T);
+  fijarInstrumento("gH", l.H);
+  fijarInstrumento("gR", l.R);
+  fijarInstrumento("gP", l.P);
+  fijarInstrumento("gQ", l.Q, q3h);
+  $("hora").textContent = "Última lectura: " + (l.hora || new Date(l.t).toLocaleString("es-AR"));
+  $("extQ").textContent = (isNaN(l.alt) ? "" : "QNH calculado para " + l.alt.toFixed(0) + " m de altura") +
+    (isNaN(q3h) ? "" : " · aguja " + (estiloInst === "vintage" ? "de bronce" : "amarilla") + " = hace 3 h (" + q3h.toFixed(1) + " hPa)");
+  $("extT").textContent = !isNaN(l.T) && !isNaN(l.R) ? "Diferencia con el rocío: " + (l.T - l.R).toFixed(1) + " °C" : "";
+  // tendencia de presión en 3 h con el historial en vivo
+  const hace3 = historial.filter(x => x.t <= l.t - 3 * 3600e3 + 10 * 60e3 && x.t >= l.t - 3 * 3600e3 - 20 * 60e3);
+  const ext = $("extP");
+  if (hace3.length) {
+    const d = l.P - hace3[hace3.length - 1].P;
+    ext.innerHTML = 'en 3 h: <span class="' + (d > 0.5 ? "tend-up" : d < -0.5 ? "tend-down" : "") + '">' +
+      (d >= 0 ? "+" : "") + d.toFixed(1) + " hPa</span>";
+  } else ext.textContent = "tendencia: faltan 3 h de datos";
+}
+
+// ===== Gráficos SVG simples =====
+function grafico(titulo, unidad, puntos, color, dec) {
+  const ok = puntos.filter(p => !isNaN(p.v));
+  const caja = document.createElement("div");
+  caja.className = "graf";
+  if (ok.length < 2) {
+    caja.innerHTML = "<h3><span>" + titulo + "</span></h3><div class='vacio'>Pocos datos todavía</div>";
+    return caja;
+  }
+  const W = 600, H = 150, pl = 40, pr = 8, pt = 8, pb = 20;
+  let min = Math.min(...ok.map(p => p.v)), max = Math.max(...ok.map(p => p.v));
+  if (max - min < 1) { const m = (max + min) / 2; min = m - 0.5; max = m + 0.5; }
+  const t0 = ok[0].t, t1 = ok[ok.length - 1].t || t0 + 1;
+  const x = t => pl + (W - pl - pr) * (t - t0) / Math.max(1, t1 - t0);
+  const y = v => pt + (H - pt - pb) * (1 - (v - min) / (max - min));
+  let d = "";
+  ok.forEach((p, i) => { d += (i ? "L" : "M") + x(p.t).toFixed(1) + " " + y(p.v).toFixed(1); });
+  const area = d + "L" + x(t1).toFixed(1) + " " + (H - pb) + "L" + x(t0).toFixed(1) + " " + (H - pb) + "Z";
+  const hh = t => new Date(t).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+  const gid = "g" + Math.random().toString(36).slice(2);
+  const ult = ok[ok.length - 1].v;
+  caja.innerHTML =
+    "<h3><span>" + titulo + "</span><span>" + ult.toFixed(dec) + " " + unidad + "</span></h3>" +
+    '<svg viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none">' +
+    '<defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + color + '" stop-opacity=".35"/>' +
+    '<stop offset="1" stop-color="' + color + '" stop-opacity="0"/></linearGradient></defs>' +
+    '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + y(max) + '" y2="' + y(max) + '" stroke="var(--line)"/>' +
+    '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + y(min) + '" y2="' + y(min) + '" stroke="var(--line)"/>' +
+    '<text x="2" y="' + (y(max) + 4) + '" font-size="12" fill="var(--sub)">' + max.toFixed(dec) + "</text>" +
+    '<text x="2" y="' + (y(min) + 4) + '" font-size="12" fill="var(--sub)">' + min.toFixed(dec) + "</text>" +
+    '<path d="' + area + '" fill="url(#' + gid + ')"/>' +
+    '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2.5" vector-effect="non-scaling-stroke"/>' +
+    '<text x="' + pl + '" y="' + (H - 4) + '" font-size="12" fill="var(--sub)">' + hh(t0) + "</text>" +
+    '<text x="' + (W - pr) + '" y="' + (H - 4) + '" font-size="12" fill="var(--sub)" text-anchor="end">' + hh(t1) + "</text>" +
+    "</svg>";
+  return caja;
+}
+
+function dibujarSerie(cont, datos) {
+  cont.innerHTML = "";
+  if (!datos.length) { cont.innerHTML = "<div class='vacio'>Sin datos</div>"; return; }
+  const s = k => datos.map(p => ({ t: p.t, v: p[k] }));
+  cont.append(
+    grafico("🌡️ Temperatura", "°C", s("T"), "#f97316", 1),
+    grafico("💧 Humedad", "%", s("H"), "#38bdf8", 0),
+    grafico("📊 QNH", "hPa", s("Q"), "#a78bfa", 1),
+    grafico("🌫️ Punto de rocío", "°C", s("R"), "#22c55e", 1)
+  );
+}
+
+let histNuevas = 0;
+// Pide a la estación las lecturas posteriores a la última que tiene la app
+async function pedirHistorial() {
+  if (!rxChar) return;
+  const ult = historial.length ? historial[historial.length - 1].t : 0;
+  const desde = Math.floor(Math.max(ult, Date.now() - 7 * 3600e3) / 1000);
+  try { await rxChar.writeValue(new TextEncoder().encode("hist " + desde + "\n")); } catch (e) {}
+}
+function dibujarVivo() { dibujarSerie($("graficosVivo"), historial); }
+
+$("btnBorrar").addEventListener("click", () => { historial = []; guardar("bme_hist", historial); dibujarVivo(); });
+
+// ===== Bluetooth =====
+async function conectar() {
+  if (!navigator.bluetooth) {
+    const av = $("avisoBT");
+    av.classList.remove("oculto");
+    av.innerHTML = window.isSecureContext
+      ? "Este navegador no tiene Bluetooth web. En Android usá <b>Chrome</b>; en iPhone, el navegador <b>Bluefy</b>."
+      : "El Bluetooth web solo funciona si la página se abre por <b>https://</b>. Ver instrucciones de publicación.";
+    return;
+  }
+  try {
+    manualOff = false;
+    estado("Buscando “" + NOMBRE + "”…", "wait");
+    dispositivo = await navigator.bluetooth.requestDevice({
+      filters: [{ name: NOMBRE }, { services: [NUS] }],
+      optionalServices: [NUS]
+    });
+    prepararDispositivo(dispositivo);
+    await abrirGATT();
+  } catch (e) {
+    estado(e.name === "NotFoundError" ? "No se eligió ningún equipo" : "Error: " + e.message, "");
+  }
+}
+
+async function abrirGATT() {
+  estado("Conectando a " + (dispositivo.name || NOMBRE) + "…", "wait");
+  const server = await dispositivo.gatt.connect();
+  const serv = await server.getPrimaryService(NUS);
+  const tx = await serv.getCharacteristic(NUS_TX);
+  rxChar = await serv.getCharacteristic(NUS_RX);
+  await tx.startNotifications();
+  tx.addEventListener("characteristicvaluechanged", ev => {
+    buffer += decoder.decode(ev.target.value, { stream: true });
+    let i;
+    while ((i = buffer.indexOf("\n")) >= 0) {
+      procesarLinea(buffer.slice(0, i));
+      buffer = buffer.slice(i + 1);
+    }
+    if (buffer.length > 2000) buffer = "";
+  });
+  buffer = "";
+  estado("Conectado a " + (dispositivo.name || NOMBRE) + " · llega una lectura por minuto", "on");
+  $("btnConectar").textContent = "⏏️ Desconectar";
+  $("btnUltima").disabled = false;
+  $("btnPron").disabled = false;
+  await pedirUltima();
+  setTimeout(pedirPronostico, 600);
+  setTimeout(async () => { try { if (rxChar) await rxChar.writeValue(new TextEncoder().encode("alertas\n")); } catch (e) {} }, 1300);
+  setTimeout(async () => { try { if (rxChar) await rxChar.writeValue(new TextEncoder().encode("ubic?\n")); } catch (e) {} }, 2000);
+  setTimeout(pedirHistorial, 2800);
+}
+
+async function pedirUltima() {
+  if (!rxChar) return;
+  try { await rxChar.writeValue(new TextEncoder().encode("ultima\n")); } catch (e) {}
+}
+
+async function alDesconectar() {
+  rxChar = null;
+  colectandoPron = false;
+  colectandoAlerta = false;
+  $("btnUltima").disabled = true;
+  $("btnPron").disabled = true;
+  $("btnConectar").textContent = "🔵 Conectar Bluetooth";
+  if (manualOff || !dispositivo) { estado("Desconectado", ""); return; }
+  if (reconectando) return;
+  reconectando = true;
+  for (let i = 1; i <= 10 && !manualOff; i++) {
+    estado("Se cortó la conexión · reintento " + i + "/10…", "wait");
+    await new Promise(r => setTimeout(r, Math.min(2000 * i, 15000)));
+    try { await abrirGATT(); reconectando = false; return; } catch (e) {}
+  }
+  reconectando = false;
+  estado("Sin conexión. Acercate a la estación y tocá Conectar.", "");
+}
+
+// ===== Conexión automática al abrir la app =====
+const conEscucha = new WeakSet();   // dispositivos que ya tienen el aviso de desconexión
+function prepararDispositivo(d) {
+  dispositivo = d;
+  if (!conEscucha.has(d)) { d.addEventListener("gattserverdisconnected", alDesconectar); conEscucha.add(d); }
+}
+
+// 1) Si Chrome recuerda la estación (getDevices), se conecta sin tocar nada.
+async function reconectarRecordado() {
+  if (!navigator.bluetooth || !navigator.bluetooth.getDevices) return false;
+  let ds = [];
+  try { ds = await navigator.bluetooth.getDevices(); } catch (e) { return false; }
+  const d = ds.find(x => x.name === NOMBRE) || ds[0];
+  if (!d) return false;
+  prepararDispositivo(d);
+  manualOff = false;
+  estado("Reconectando con " + (d.name || NOMBRE) + "…", "wait");
+  try { await abrirGATT(); return true; } catch (e) {}
+  // Fuera de alcance: esperar a que la estación aparezca y conectar en cuanto se la escuche
+  if (d.watchAdvertisements) {
+    try {
+      const ac = new AbortController();
+      d.addEventListener("advertisementreceived", async () => {
+        ac.abort();
+        try { await abrirGATT(); } catch (e) { estado("No se pudo conectar: " + e.message, ""); }
+      }, { once: true });
+      await d.watchAdvertisements({ signal: ac.signal });
+      estado("Esperando a la estación (acercate)…", "wait");
+      return true;
+    } catch (e) {}
+  }
+  return false;
+}
+
+// 2) Si no, pantalla "Tocá para conectar": un toque abre la lista y se elige la estación.
+function pedirToque() {
+  if (!navigator.bluetooth || !window.isSecureContext) return;
+  $("toque").classList.remove("oculto");
+}
+$("toque").addEventListener("click", e => {
+  $("toque").classList.add("oculto");
+  if (e.target.id !== "toqueLuego") conectar();
+});
+
+async function autoConectar() {
+  if (dispositivo && dispositivo.gatt && dispositivo.gatt.connected) return;
+  if (await reconectarRecordado()) return;
+  pedirToque();
+}
+
+// Al volver a la app (estaba en segundo plano) reconecta si se había cortado
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  if (dispositivo && dispositivo.gatt.connected) pedirHistorial();   // completar lo que se perdió dormida
+  else if (!manualOff && !reconectando) reconectarRecordado();
+});
+
+$("btnConectar").addEventListener("click", () => {
+  if (dispositivo && dispositivo.gatt.connected) {
+    manualOff = true;
+    dispositivo.gatt.disconnect();
+  } else conectar();
+});
+$("btnUltima").addEventListener("click", pedirUltima);
+
+// ===== Alarmas =====
+let alertaEstacion = leer("bme_alerta", null);   // lo que mandó la estación (SMN o local)
+let alarmasMovil = [];                            // calculadas con las lecturas del BME280 móvil
+let clavesAvisadas = new Set();
+
+// Mismos criterios que usa la estación, aplicados a las lecturas del sensor móvil
+function calcularAlarmasMovil(l) {
+  const a = [];
+  const buscar = (min, tolAntes, tolDespues) =>
+    historial.filter(x => x.t <= l.t - min * 60e3 + tolDespues * 60e3 && x.t >= l.t - min * 60e3 - tolAntes * 60e3).pop();
+  const h3 = buscar(180, 20, 10), h1 = buscar(60, 10, 5), m30 = buscar(30, 10, 5);
+  if (h3 && !isNaN(l.Q) && l.Q - h3.Q <= -3)
+    a.push({ k: "pres3", t: "📉 Caída brusca de presión", d: (l.Q - h3.Q).toFixed(1) + " hPa en 3 h. Posible desmejoramiento: atento a tormentas y viento." });
+  else if (h1 && !isNaN(l.Q) && l.Q - h1.Q <= -2)
+    a.push({ k: "pres1", t: "📉 La presión cae rápido", d: (l.Q - h1.Q).toFixed(1) + " hPa en la última hora." });
+  if (m30 && !isNaN(l.T) && l.T - m30.T <= -3)
+    a.push({ k: "rafaga", t: "⛈️ Caída brusca de temperatura", d: (l.T - m30.T).toFixed(1) + " °C en 30 min: posible ráfaga fría o entrada de tormenta." });
+  if (!isNaN(l.T) && l.T < 2)
+    a.push(l.H > 80 ? { k: "helada", t: "❄️ Riesgo de helada blanca", d: "Proteger plantas sensibles." }
+                    : { k: "helada", t: "⚫ Riesgo de helada negra", d: "Peligrosa y sin escarcha: proteger cultivos y cañerías." });
+  if (!isNaN(l.T) && !isNaN(l.R) && l.T - l.R <= 1.5 && l.H >= 93)
+    a.push({ k: "niebla", t: "🌫️ Niebla probable", d: "Temperatura y rocío casi iguales (" + (l.T - l.R).toFixed(1) + " °C). Precaución al manejar." });
+  if (!isNaN(l.T) && l.T >= 35)
+    a.push({ k: "calor", t: "🔥 Calor extremo", d: (l.H < 30 ? "Aire muy seco (tipo Zonda). " : "") + "Hidratarse y evitar el sol del mediodía." });
+  return a;
+}
+
+function dibujarAlarmas() {
+  let html = "";
+  const e = alertaEstacion;
+  const vieja = e && Date.now() - e.recibida > 2 * 3600e3;
+  const pie = e ? '<div class="s">Recibida ' + new Date(e.recibida).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) +
+                  (vieja ? " · puede no estar vigente (conectá para actualizar)" : "") + "</div>" : "";
+  if (e && e.tipo === "oficial")
+    html += '<div class="alr oficial"><div class="t">🚨 ALERTA OFICIAL SMN · ' + esc(ubic && ubic.nombre ? ubic.nombre : "Córdoba Capital") + '</div>' + md(e.texto).replace(/\n/g, "<br>") + pie + "</div>";
+  else if (e && e.tipo === "local") {
+    const [txt, ...rec] = e.texto.split("\n");
+    html += '<div class="alr local"><div class="t">⚠️ Alerta de la estación' + (ubic && ubic.modo === "movil" ? " · " + esc(ubic.nombre) : " (casa)") + '</div>' + md(txt) +
+            (rec.length ? "<br><i>" + md(rec.join(" ")) + "</i>" : "") + pie + "</div>";
+  }
+  for (const m of alarmasMovil)
+    html += '<div class="alr movil"><div class="t">' + esc(m.t) + ' <span style="font-weight:400;font-size:12px">· sensor móvil</span></div>' + esc(m.d) + "</div>";
+  if (!html && (e || historial.length))
+    html = '<div class="alr ok">✅ Sin alertas' + (e && e.tipo === "ninguna" && !vieja ? "" : e ? " (dato de la estación de hace más de 2 h)" : "") + "</div>";
+  $("alarmas").innerHTML = html;
+
+  // Vibrar cuando aparece una alarma nueva
+  const claves = new Set(alarmasMovil.map(m => m.k));
+  if (e && (e.tipo === "oficial" || e.tipo === "local")) claves.add("est:" + e.texto.slice(0, 60));
+  let nueva = false;
+  for (const k of claves) if (!clavesAvisadas.has(k)) nueva = true;
+  clavesAvisadas = claves;
+  if (nueva) {
+    try { navigator.vibrate && navigator.vibrate([300, 150, 300]); } catch (err) {}
+    const partes = [];
+    if (e && e.tipo === "oficial") partes.push("🚨 SMN: " + e.texto.split("\n")[0]);
+    else if (e && e.tipo === "local") partes.push("⚠️ " + e.texto.split("\n")[0]);
+    for (const m of alarmasMovil) partes.push(m.t + ": " + m.d);
+    notificar("Alarma · Estación Móvil", partes.join("\n"));
+  }
+}
+
+// Texto de Telegram (Markdown simple) -> HTML prolijo
+function esc(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function md(t) {
+  return esc(t).replace(/\*([^*\n]+)\*/g, "<b>$1</b>").replace(/(^|\s)_([^_\n]+)_(?=\s|$)/g, "$1<i>$2</i>");
+}
+function mostrarPronostico(p) {
+  if (!p || !p.texto) return;
+  const lineas = p.texto.split("\n");
+  let html = "", cab = [], cuerpo = [], extra = [], i = 0;
+  // cabecera: primeras líneas hasta la primera vacía (título, lugar, hora, motor, cielo)
+  for (; i < lineas.length && lineas[i].trim() !== ""; i++) cab.push(lineas[i]);
+  for (; i < lineas.length; i++) {
+    const l = lineas[i];
+    if (/^\s*(📊|🧮|⛈️|🧊)/.test(l)) extra.push(l); else cuerpo.push(l);
+  }
+  html += '<div class="cab">' + cab.map(md).join("<br>") + "</div>";
+  // cuerpo de la IA: cada "Clima: … | Lluvia: … | …" en su propio renglón
+  const texto = cuerpo.join("\n").trim();
+  for (const parrafo of texto.split(/\n+/)) {
+    if (!parrafo.trim()) continue;
+    if (/ALERTA|Alerta (AMARILLA|NARANJA|ROJA)/.test(parrafo) && parrafo.length < 700) {
+      html += '<div class="alerta">' + md(parrafo.trim()) + "</div>";
+      continue;
+    }
+    for (const seg of parrafo.split(/\s+\|\s+/)) {
+      const m = seg.match(/^\s*([A-Za-zÁÉÍÓÚáéíóúñÑ ]{3,20}):\s*(.*)$/s);
+      html += '<div class="seg">' + (m ? '<span class="etq">' + esc(m[1]) + ":</span> " + md(m[2]) : md(seg.trim())) + "</div>";
+    }
+  }
+  if (extra.length) html += '<div class="bloque">' + extra.map(md).join("<br>") + "</div>";
+  html += '<div class="cab" style="margin-top:10px">Recibido: ' + new Date(p.recibido).toLocaleString("es-AR") + "</div>";
+  $("pron").innerHTML = html;
+}
+
+async function pedirPronostico() {
+  if (!rxChar) { $("estadoPron").textContent = "⚠️ Conectá el Bluetooth para pedir el pronóstico."; return; }
+  try { await rxChar.writeValue(new TextEncoder().encode("pronostico\n")); $("estadoPron").textContent = "Pidiendo pronóstico…"; }
+  catch (e) { $("estadoPron").textContent = "❌ No se pudo pedir: " + e.message; }
+}
+$("btnPron").addEventListener("click", pedirPronostico);
+
+// ===== Ventana de altura =====
+const ALT_CASA = 452;
+let altEstacion = NaN, ultimaP = NaN, altCalculada = NaN;
+
+function mostrarAltura(a) {
+  if (isNaN(a)) return;
+  altEstacion = a;
+  $("altBtn").textContent = a.toFixed(0) + " m";
+  $("altActual").textContent = a.toFixed(0) + " m" + (Math.round(a) === ALT_CASA ? " (casa)" : "");
+}
+
+function abrirAlt() {
+  $("modalAlt").classList.remove("oculto");
+  $("altNueva").value = isNaN(altEstacion) ? "" : Math.round(altEstacion);
+  delete $("altNueva").dataset.tocada;
+  $("altTerreno").textContent = "";
+  $("lugarNombre").value = ubic.modo === "casa" ? "" : (ubic.nombre || "");
+  $("lugarLat").value = ubic.modo === "casa" ? "" : ubic.lat.toFixed(5);
+  $("lugarLon").value = ubic.modo === "casa" ? "" : ubic.lon.toFixed(5);
+  $("altEstado").textContent = rxChar ? "" : "⚠️ Conectá el Bluetooth para poder cambiar el lugar y la altura.";
+  actualizarCalc();
+  if (rxChar) enviarComando("ubic?").then(() => espera(300)).then(() => enviarComando("alt?"));
+}
+function cerrarAlt() { $("modalAlt").classList.add("oculto"); }
+
+async function enviarComando(cmd) {
+  if (!rxChar) { $("altEstado").textContent = "⚠️ Sin conexión Bluetooth con la estación."; return false; }
+  try { await rxChar.writeValue(new TextEncoder().encode(cmd + "\n")); return true; }
+  catch (e) { $("altEstado").textContent = "❌ No se pudo enviar: " + e.message; return false; }
+}
+
+async function guardarAltura(a) {
+  if (isNaN(a) || a < -100 || a > 5000) { $("altEstado").textContent = "❌ Escribí un número entre -100 y 5000 m."; return; }
+  $("altEstado").textContent = "Enviando " + a.toFixed(0) + " m…";
+  if (await enviarComando("alt " + a.toFixed(1))) $("altEstado").textContent = "Esperando confirmación de la estación…";
+}
+
+// Altura a partir de la presión del sensor y un QNH oficial (fórmula estándar OACI, la misma de la placa)
+function actualizarCalc() {
+  const q = parseFloat(String($("qnhRef").value).replace(",", "."));
+  altCalculada = NaN;
+  if (isNaN(ultimaP)) { $("altCalc").textContent = "Todavía no hay presión del sensor."; }
+  else if (isNaN(q) || q < 900 || q > 1100) { $("altCalc").textContent = "Presión del sensor: " + ultimaP.toFixed(1) + " hPa"; }
+  else {
+    altCalculada = 288.15 / 0.0065 * (1 - Math.pow(ultimaP / q, 1 / 5.25588));
+    $("altCalc").innerHTML = "Presión del sensor " + ultimaP.toFixed(1) + " hPa → altura <b>" + altCalculada.toFixed(0) + " m</b>";
+  }
+  $("btnUsarCalc").disabled = isNaN(altCalculada);
+}
+
+$("btnAlt").addEventListener("click", abrirAlt);
+$("btnAltCerrar").addEventListener("click", cerrarAlt);
+$("modalAlt").addEventListener("click", e => { if (e.target.id === "modalAlt") cerrarAlt(); });
+// ----- Ubicación (coordenadas + nombre) -----
+let ubic = leer("bme_ubic", { modo: "casa", lat: -31.4271, lon: -64.2183, nombre: "Córdoba Capital" });
+const numero = id => parseFloat(String($(id).value).replace(",", "."));
+const espera = ms => new Promise(r => setTimeout(r, ms));
+
+function mostrarUbicacion(u) {
+  if (!u) return;
+  ubic = u;
+  guardar("bme_ubic", u);
+  $("lugarBtn").textContent = u.modo === "casa" ? "Casa" : (u.nombre || "Móvil");
+  $("lugarActual").textContent = (u.modo === "casa" ? "🏠 " : "🚐 ") + (u.nombre || "") + " (" + u.lat.toFixed(4) + ", " + u.lon.toFixed(4) + ")" +
+                                 (u.modo === "casa" ? " · sensores de la casa" : " · sensor BME280 móvil");
+  dibujarAlarmas();
+}
+
+// Altura del terreno para esas coordenadas (Open-Meteo, modelo digital de elevación)
+async function alturaTerreno(lat, lon) {
+  try {
+    const r = await fetch("https://api.open-meteo.com/v1/elevation?latitude=" + lat + "&longitude=" + lon);
+    const j = await r.json();
+    return j.elevation && j.elevation.length ? j.elevation[0] : NaN;
+  } catch (e) { return NaN; }
+}
+async function sugerirAltura() {
+  const la = numero("lugarLat"), lo = numero("lugarLon");
+  if (isNaN(la) || isNaN(lo)) return;
+  $("altTerreno").textContent = "Buscando la altura del terreno…";
+  const h = await alturaTerreno(la, lo);
+  if (isNaN(h)) { $("altTerreno").textContent = "No se pudo obtener la altura del terreno (¿sin internet?)."; return; }
+  $("altTerreno").innerHTML = "Altura del terreno en ese punto: <b>" + Math.round(h) + " m</b>. Sumale la altura del sensor sobre el piso.";
+  if (!$("altNueva").dataset.tocada) $("altNueva").value = Math.round(h + 1.5);
+}
+$("altNueva").addEventListener("input", () => { $("altNueva").dataset.tocada = "1"; });
+let timerTerreno = null;
+["lugarLat", "lugarLon"].forEach(id => $(id).addEventListener("input", () => { clearTimeout(timerTerreno); timerTerreno = setTimeout(sugerirAltura, 800); }));
+
+$("btnGPS").addEventListener("click", () => {
+  if (!navigator.geolocation) { $("gpsEstado").textContent = "Este navegador no da la ubicación."; return; }
+  $("gpsEstado").textContent = "Buscando señal GPS…";
+  navigator.geolocation.getCurrentPosition(async pos => {
+    $("lugarLat").value = pos.coords.latitude.toFixed(5);
+    $("lugarLon").value = pos.coords.longitude.toFixed(5);
+    $("gpsEstado").textContent = "✅ GPS: precisión ±" + Math.round(pos.coords.accuracy) + " m";
+    delete $("altNueva").dataset.tocada;
+    await sugerirAltura();
+  }, err => {
+    $("gpsEstado").textContent = err.code === 1 ? "❌ Permiso de ubicación denegado (habilitalo para esta app en Chrome)." : "❌ No se pudo obtener la ubicación: " + err.message;
+  }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 });
+});
+
+$("btnAltGuardar").addEventListener("click", async () => {
+  const la = numero("lugarLat"), lo = numero("lugarLon"), a = numero("altNueva");
+  const nom = $("lugarNombre").value.trim().replace(/\s+/g, " ").slice(0, 30) || "Estación móvil";
+  if (isNaN(la) || isNaN(lo) || la < -90 || la > 90 || lo < -180 || lo > 180) { $("altEstado").textContent = "❌ Coordenadas inválidas."; return; }
+  if (isNaN(a) || a < -100 || a > 5000) { $("altEstado").textContent = "❌ Altura inválida (entre -100 y 5000 m)."; return; }
+  $("altEstado").textContent = "Enviando lugar…";
+  if (!(await enviarComando("ubic " + la.toFixed(5) + " " + lo.toFixed(5) + " " + nom))) return;
+  await espera(400);
+  if (!(await enviarComando("alt " + a.toFixed(1)))) return;
+  $("altEstado").textContent = "Esperando confirmación de la estación…";
+});
+$("btnAltCasa").addEventListener("click", async () => {
+  $("altEstado").textContent = "Volviendo a casa…";
+  if (!(await enviarComando("ubic casa"))) return;
+  await espera(400);
+  if (await enviarComando("alt casa")) $("altEstado").textContent = "Esperando confirmación de la estación…";
+});
+$("qnhRef").addEventListener("input", actualizarCalc);
+$("btnUsarCalc").addEventListener("click", () => { $("altNueva").value = Math.round(altCalculada); guardarAltura(Math.round(altCalculada)); });
+
+// ===== ThingSpeak (field1 P, field2 QNH, field3 T, field4 HR, field5 rocío) =====
+// ----- Configuración guardada en 3 lugares (localStorage + IndexedDB + cookie) -----
+// Si Chrome limpia uno, se recupera de los otros. Se guarda sola al escribir.
+const CFG_COOKIE = "bme_cfg";
+let cfg = { canal: "", key: "" };
+
+function idb(modo, valor) {
+  return new Promise(res => {
+    try {
+      const rq = indexedDB.open("bme_movil", 1);
+      rq.onupgradeneeded = () => rq.result.createObjectStore("cfg");
+      rq.onerror = () => res(null);
+      rq.onsuccess = () => {
+        try {
+          const db = rq.result, tx = db.transaction("cfg", modo === "w" ? "readwrite" : "readonly"), st = tx.objectStore("cfg");
+          if (modo === "w") { st.put(valor, "cfg"); tx.oncomplete = () => { db.close(); res(true); }; }
+          else { const g = st.get("cfg"); g.onsuccess = () => { db.close(); res(g.result || null); }; g.onerror = () => res(null); }
+          tx.onerror = () => res(null);
+        } catch (e) { res(null); }
+      };
+    } catch (e) { res(null); }
+  });
+}
+function leerCookie() {
+  try {
+    const m = document.cookie.match(new RegExp("(?:^|; )" + CFG_COOKIE + "=([^;]*)"));
+    return m ? JSON.parse(decodeURIComponent(m[1])) : null;
+  } catch (e) { return null; }
+}
+function escribirCookie(c) {
+  try { document.cookie = CFG_COOKIE + "=" + encodeURIComponent(JSON.stringify(c)) + "; max-age=" + (400 * 86400) + "; path=/; SameSite=Strict; Secure"; } catch (e) {}
+}
+
+async function guardarCfg(c) {
+  cfg = c;
+  guardar("bme_cfg", c);
+  escribirCookie(c);
+  await idb("w", c);
+  // Pedir a Chrome que no borre los datos de esta app para liberar espacio
+  try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
+}
+
+async function cargarCfg() {
+  const fuentes = [leer("bme_cfg", null), await idb("r"), leerCookie()];
+  const c = fuentes.find(x => x && x.canal) || { canal: "", key: "" };
+  cfg = { canal: c.canal || "", key: c.key || "" };
+  $("cfgCanal").value = cfg.canal;
+  $("cfgKey").value = cfg.key;
+  if (cfg.canal) {
+    $("estadoCfg").textContent = "✅ Guardado en este teléfono (canal " + cfg.canal + ")";
+    if (fuentes.some(x => !x || !x.canal)) guardarCfg(cfg);   // reponer las copias que se hayan perdido
+  }
+  return cfg;
+}
+
+let timerCfg = null;
+function alEscribirCfg() {
+  clearTimeout(timerCfg);
+  $("estadoCfg").textContent = "Guardando…";
+  timerCfg = setTimeout(async () => {
+    const c = { canal: $("cfgCanal").value.trim(), key: $("cfgKey").value.trim() };
+    await guardarCfg(c);
+    $("estadoCfg").textContent = c.canal ? "✅ Guardado en este teléfono" : "Falta el Channel ID";
+  }, 500);
+}
+$("cfgCanal").addEventListener("input", alEscribirCfg);
+$("cfgKey").addEventListener("input", alEscribirCfg);
+$("btnGuardar").addEventListener("click", async () => {
+  clearTimeout(timerCfg);
+  const c = { canal: $("cfgCanal").value.trim(), key: $("cfgKey").value.trim() };
+  await guardarCfg(c);
+  $("estadoCfg").textContent = c.canal ? "✅ Guardado en este teléfono" : "Falta el Channel ID";
+});
+
+async function cargarThingSpeak() {
+  const c = { canal: $("cfgCanal").value.trim() || cfg.canal, key: $("cfgKey").value.trim() || cfg.key };
+  if (!c.canal) { $("estadoTS").textContent = "Falta el Channel ID (pestaña ⚙️)."; return; }
+  $("estadoTS").textContent = "Cargando…";
+  let url = "https://api.thingspeak.com/channels/" + encodeURIComponent(c.canal) + "/feeds.json?results=100";
+  if (c.key) url += "&api_key=" + encodeURIComponent(c.key);
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("HTTP " + r.status + (r.status === 400 ? " (¿canal privado sin Read Key?)" : ""));
+    const j = await r.json();
+    const datos = (j.feeds || []).map(x => ({
+      t: Date.parse(x.created_at),
+      P: parseFloat(x.field1), Q: parseFloat(x.field2), T: parseFloat(x.field3),
+      H: parseFloat(x.field4), R: parseFloat(x.field5)
+    })).filter(x => !isNaN(x.t));
+    dibujarSerie($("graficosTS"), datos);
+    const nombre = j.channel && j.channel.name ? j.channel.name + " · " : "";
+    $("estadoTS").textContent = datos.length
+      ? nombre + datos.length + " envíos (uno cada 15 min). Último: " + new Date(datos[datos.length - 1].t).toLocaleString("es-AR")
+      : nombre + "El canal no tiene datos todavía.";
+    if (datos.length && !historial.length) {
+      const u = datos[datos.length - 1];
+      mostrarLectura({ ...u, hora: new Date(u.t).toLocaleString("es-AR") + " (ThingSpeak)", alt: NaN });
+    }
+  } catch (e) {
+    $("estadoTS").textContent = "❌ No se pudo cargar: " + e.message;
+  }
+}
+$("btnTS").addEventListener("click", cargarThingSpeak);
+
+function aplicarEstilo(e) {
+  estiloInst = e;
+  guardar("bme_estilo", e);
+  document.body.classList.toggle("vintage", e === "vintage");
+  $("estVintage").style.outline = e === "vintage" ? "2px solid var(--acc)" : "";
+  $("estModerno").style.outline = e === "moderno" ? "2px solid var(--acc)" : "";
+  const pAct = rangoP ? rangoP[0] + 40 : 957;
+  crearInstrumentos();
+  crearRangoPresion(pAct);
+  if (ultimaLectura) mostrarLectura(ultimaLectura);
+}
+$("estVintage").addEventListener("click", () => aplicarEstilo("vintage"));
+$("estModerno").addEventListener("click", () => aplicarEstilo("moderno"));
+
+// ===== Segundo plano: mantener la app despierta + notificaciones =====
+// Android suspende las páginas en segundo plano, salvo las que están reproduciendo sonido.
+// Se reproduce un sonido inaudible en bucle: aparece como "reproduciendo" en las notificaciones.
+let fondoActivo = false, audioFondo = null, swReg = null;
+
+function crearAudioFondo() {
+  const hz = 8000, n = hz * 2, buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+  const txt = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  txt(0, "RIFF"); v.setUint32(4, 36 + n, true); txt(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, hz, true); v.setUint32(28, hz, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true);
+  txt(36, "data"); v.setUint32(40, n, true);
+  for (let i = 0; i < n; i++) v.setUint8(44 + i, 128 + (Math.floor(i / 200) % 2));   // 20 Hz, amplitud mínima: no se oye
+  const a = new Audio(URL.createObjectURL(new Blob([buf], { type: "audio/wav" })));
+  a.loop = true;
+  return a;
+}
+
+function tituloFondo() {
+  const l = ultimaLectura;
+  return l && !isNaN(l.T) ? f(l.T, 1) + " °C · " + f(l.H, 0) + " % · " + f(l.Q, 1) + " hPa" : "Recibiendo datos…";
+}
+function actualizarMediaSession() {
+  if (!fondoActivo || !("mediaSession" in navigator)) return;
+  try { navigator.mediaSession.metadata = new MediaMetadata({ title: tituloFondo(), artist: "Estación Móvil BME280" }); } catch (e) {}
+}
+
+async function notificar(titulo, cuerpo) {
+  try {
+    if (document.visibilityState === "visible") return;          // con la app a la vista alcanza el recuadro
+    if (!swReg || !("Notification" in window) || Notification.permission !== "granted") return;
+    await swReg.showNotification(titulo, { body: cuerpo, tag: "alarma-bme", renotify: true, vibrate: [300, 150, 300, 150, 300] });
+  } catch (e) {}
+}
+
+async function activarFondo(desdeBoton) {
+  try {
+    if (!audioFondo) audioFondo = crearAudioFondo();
+    await audioFondo.play();
+  } catch (e) {
+    $("estadoFondo").textContent = "Tocá la pantalla una vez para activarlo.";
+    return false;
+  }
+  fondoActivo = true;
+  guardar("bme_fondo", true);
+  if ("mediaSession" in navigator) {
+    try {
+      navigator.mediaSession.setActionHandler("pause", () => desactivarFondo());
+      navigator.mediaSession.setActionHandler("play", () => activarFondo(false));
+    } catch (e) {}
+  }
+  actualizarMediaSession();
+  $("btnFondo").textContent = "☀️ Desactivar segundo plano";
+  $("estadoFondo").textContent = "✅ Activo.";
+  let notas = "";
+  try {
+    if ("serviceWorker" in navigator) swReg = await navigator.serviceWorker.register("sw.js");
+    if ("Notification" in window) {
+      if (Notification.permission === "default" && desdeBoton) await Notification.requestPermission();
+      notas = Notification.permission === "granted" && swReg ? " Las alarmas llegan como notificación."
+            : " Sin permiso de notificaciones: las alarmas solo se ven al abrir la app.";
+    }
+  } catch (e) { notas = " Notificaciones no disponibles acá."; }
+  if (fondoActivo) $("estadoFondo").textContent = "✅ Activo." + notas;
+  return true;
+}
+function desactivarFondo() {
+  fondoActivo = false;
+  guardar("bme_fondo", false);
+  try { audioFondo && audioFondo.pause(); } catch (e) {}
+  $("btnFondo").textContent = "🌙 Activar segundo plano";
+  $("estadoFondo").textContent = "Desactivado.";
+}
+$("btnFondo").addEventListener("click", () => fondoActivo ? desactivarFondo() : activarFondo(true));
+// Si quedó activado, se reanuda con el primer toque (el navegador exige un toque para reproducir)
+if (leer("bme_fondo", false)) {
+  $("estadoFondo").textContent = "Se activa con el primer toque en la pantalla.";
+  const arrancar = () => { if (!fondoActivo) activarFondo(false); };
+  document.addEventListener("pointerdown", arrancar, { once: true });
+}
+
+// ===== Arranque =====
+aplicarEstilo(estiloInst);
+mostrarPronostico(leer("bme_pron", null));
+mostrarUbicacion(ubic);
+setTimeout(autoConectar, 300);
+cargarCfg().then(c => { if (c.canal) cargarThingSpeak(); });
+dibujarVivo();
+if (historial.length) {
+  const u = historial[historial.length - 1];
+  mostrarLectura({ ...u, alt: NaN, hora: (u.hora || "") + " (guardada)" });
+}
+let tab = leer("bme_tab", "vivo");
+if (tab === "log") tab = "pron";
+const bt = document.querySelector('.tabs button[data-tab="' + tab + '"]');
+if (bt) bt.click();
+if (!navigator.bluetooth) {
+  const av = $("avisoBT");
+  av.classList.remove("oculto");
+  av.innerHTML = "Bluetooth web no disponible acá. Usá <b>Chrome en Android</b> (o <b>Bluefy</b> en iPhone) y abrí la app por <b>https://</b>. " +
+                 "Igual podés ver el historial desde la pestaña <b>ThingSpeak</b>.";
+}
+</script>
+</body>
+</html>
