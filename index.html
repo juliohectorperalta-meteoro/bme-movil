@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0f172a">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Estación Móvil BME280</title>
+<title>Estación Móvil</title>
 <link rel="manifest" id="manifest">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,8 +22,10 @@
   *{box-sizing:border-box}
   body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--txt);
        padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
-  header{display:flex;align-items:center;gap:10px;padding:14px 16px 6px}
-  header h1{font-size:18px;margin:0;flex:1}
+  header{position:relative;padding:16px 40px 8px;text-align:center}
+  header h1{font-size:30px;font-weight:800;margin:0;letter-spacing:.5px;line-height:1.15}
+  header h1::after{content:"";display:block;width:64px;height:4px;border-radius:2px;background:var(--acc);margin:8px auto 0}
+  header .dot{position:absolute;left:16px;top:28px}
   .dot{width:10px;height:10px;border-radius:50%;background:var(--err);flex:none}
   .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}
   .dot.wait{background:var(--warn)}
@@ -87,7 +89,7 @@
   #nautico svg{height:auto;max-width:400px;margin:0 auto;aspect-ratio:1/1}
   .tabs{overflow-x:auto;scrollbar-width:none}
   .tabs::-webkit-scrollbar{display:none}
-  .tabs button{flex:1 0 auto;padding-left:12px;padding-right:12px}
+  .tabs button{flex:1 1 auto;padding-left:8px;padding-right:8px}
   @media (max-width:430px){.tabs{gap:4px}.tabs button{font-size:13px;padding:9px 10px}}
   .vacio{color:var(--sub);font-size:14px;text-align:center;padding:24px 8px}
   .log{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px 12px;font-family:ui-monospace,Menlo,monospace;
@@ -148,7 +150,7 @@
 <body>
 <header>
   <span class="dot" id="dot"></span>
-  <h1>Estación Móvil · BME280</h1>
+  <h1>Estación Móvil</h1>
 </header>
 
 <main>
@@ -178,9 +180,6 @@
 
   <div class="tabs">
     <button data-tab="vivo" class="act">En vivo</button>
-    <button data-tab="clasico">Clásico</button>
-    <button data-tab="nautico">Náutico</button>
-    <button data-tab="mas">Más datos</button>
     <button data-tab="ts">ThingSpeak</button>
     <button data-tab="pron">Pronóstico</button>
     <button data-tab="cfg">⚙️</button>
@@ -229,7 +228,15 @@
   </section>
 
   <section id="tab-cfg" class="oculto">
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>14/11/2026 · 17:45</b> <span id="tipoApp"></span></div>
+    <div class="card" style="margin-bottom:10px">
+      <b>Otras vistas</b>
+      <div class="row" style="margin-top:10px">
+        <button class="sec" data-ver="clasico">🪵 Clásico</button>
+        <button class="sec" data-ver="nautico">⚓ Náutico</button>
+        <button class="sec" data-ver="mas">📊 Más datos</button>
+      </div>
+    </div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>14/11/2026 · 19:15</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -338,7 +345,7 @@ const MAX_HIST_MS = 24 * 3600 * 1000;
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0f172a"/>' +
     '<path d="M28 12a6 6 0 0 1 12 0v24a11 11 0 1 1-12 0z" fill="none" stroke="#38bdf8" stroke-width="4"/>' +
     '<circle cx="34" cy="45" r="6" fill="#38bdf8"/></svg>');
-  const m = { name: "Estación Móvil BME280", short_name: "BME Móvil", display: "standalone",
+  const m = { name: "Estación Móvil", short_name: "Estación Móvil", display: "standalone",
               background_color: "#0f172a", theme_color: "#0f172a", start_url: location.href,
               icons: [{ src: icono, sizes: "any", type: "image/svg+xml" }] };
   $("manifest").href = "data:application/manifest+json," + encodeURIComponent(JSON.stringify(m));
@@ -360,16 +367,22 @@ function agregarLog(linea) {
   while (log.children.length > 200) log.lastChild.remove();
 }
 
-document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
-  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("act", x === b));
-  ["vivo", "clasico", "nautico", "mas", "ts", "pron", "cfg"].forEach(t => $("tab-" + t).classList.toggle("oculto", t !== b.dataset.tab));
-  // En "Clásico" se ven solo el termómetro y el barómetro de pared
-  if (b.dataset.tab === "ts" && cfg && cfg.canal) cargarThingSpeak();
-  if (b.dataset.tab === "mas") dibujarAstro();
-  const clasico = ["clasico", "nautico", "mas"].includes(b.dataset.tab);
-  ["gridInst", "extQ", "extT", "extP"].forEach(id => $(id).classList.toggle("oculto", clasico));
-  guardar("bme_tab", b.dataset.tab);
-}));
+// A la vista: En vivo, ThingSpeak, Pronóstico y ⚙️. Clásico, Náutico y Más datos se abren desde ⚙️.
+const VISTAS_EN_CFG = ["clasico", "nautico", "mas"];
+function mostrarTab(nombre) {
+  if (!$("tab-" + nombre)) nombre = "vivo";
+  const enBarra = VISTAS_EN_CFG.includes(nombre) ? "cfg" : nombre;       // esas vistas dejan marcado el engranaje
+  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("act", x.dataset.tab === enBarra));
+  ["vivo", "clasico", "nautico", "mas", "ts", "pron", "cfg"].forEach(t => $("tab-" + t).classList.toggle("oculto", t !== nombre));
+  if (nombre === "ts" && cfg && cfg.canal) cargarThingSpeak();
+  if (nombre === "mas") dibujarAstro();
+  // En Clásico, Náutico y Más datos se ocultan los instrumentos redondos
+  const sinInstrumentos = VISTAS_EN_CFG.includes(nombre);
+  ["gridInst", "extQ", "extT", "extP"].forEach(id => $(id).classList.toggle("oculto", sinInstrumentos));
+  guardar("bme_tab", nombre);
+}
+document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => mostrarTab(b.dataset.tab)));
+document.querySelectorAll("button[data-ver]").forEach(b => b.addEventListener("click", () => { mostrarTab(b.dataset.ver); window.scrollTo(0, 0); }));
 
 // ===== Instrumentos analógicos (SVG) =====
 // Esfera de 270°: el mínimo abajo a la izquierda, el máximo abajo a la derecha.
@@ -1962,8 +1975,7 @@ if (historial.length) {
 }
 let tab = leer("bme_tab", "vivo");
 if (tab === "log") tab = "pron";
-const bt = document.querySelector('.tabs button[data-tab="' + tab + '"]');
-if (bt) bt.click();
+mostrarTab(tab);
 if (!navigator.bluetooth && !NATIVO) {
   const av = $("avisoBT");
   av.classList.remove("oculto");
