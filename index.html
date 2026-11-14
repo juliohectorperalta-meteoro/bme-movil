@@ -229,7 +229,7 @@
   </section>
 
   <section id="tab-cfg" class="oculto">
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>14/11/2026 · 13:25</b></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>14/11/2026 · 14:10</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -1117,8 +1117,104 @@ function dibujarVivo() { dibujarSerie($("graficosVivo"), historial); }
 
 $("btnBorrar").addEventListener("click", () => { historial = []; guardar("bme_hist", historial); dibujarVivo(); });
 
+// ===== Bluetooth nativo (cuando corre como app Android con Capacitor) =====
+const NATIVO = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === "function" && window.Capacitor.isNativePlatform());
+let BLE = null, bleIniciado = false, idNativo = null, escuchasNativas = [];
+const bytesAHex = u8 => Array.from(u8, b => b.toString(16).padStart(2, "0")).join("");
+function valorABytes(v) {             // el complemento entrega texto hexadecimal (o un DataView)
+  if (!v) return new Uint8Array(0);
+  if (typeof v !== "string") return new Uint8Array(v.buffer || v);
+  const h = v.replace(/[^0-9a-f]/gi, ""), u = new Uint8Array(h.length >> 1);
+  for (let i = 0; i < u.length; i++) u[i] = parseInt(h.substr(i * 2, 2), 16);
+  return u;
+}
+function cargarPluginBLE() {
+  return new Promise((res, rej) => {
+    if (BLE) return res(BLE);
+    const listo = () => { try { BLE = capacitorExports.registerPlugin("BluetoothLe"); res(BLE); } catch (e) { rej(e); } };
+    if (window.capacitorExports) return listo();
+    const sc = document.createElement("script");
+    sc.src = "capacitor.js"; sc.onload = listo; sc.onerror = () => rej(new Error("falta capacitor.js en la app"));
+    document.head.appendChild(sc);
+  });
+}
+async function prepararBLE() {
+  await cargarPluginBLE();
+  if (!bleIniciado) { await BLE.initialize({ androidNeverForLocation: true }); bleIniciado = true; }   // pide los permisos la primera vez
+  const en = await BLE.isEnabled();
+  if (!en.value) { try { await BLE.requestEnable(); } catch (e) { throw new Error("el Bluetooth del teléfono está apagado"); } }
+}
+// Busca la estación por su servicio UART o por su nombre y devuelve su identificador
+function escanearNativo(ms) {
+  return new Promise(async (res, rej) => {
+    let escucha = null, hecho = false;
+    const fin = async (id, err) => {
+      if (hecho) return; hecho = true;
+      clearTimeout(reloj);
+      try { await BLE.stopLEScan(); } catch (e) {}
+      try { if (escucha) await escucha.remove(); } catch (e) {}
+      err ? rej(err) : res(id);
+    };
+    const reloj = setTimeout(() => fin(null, new Error("no se encontró la estación (¿está encendida y cerca?)")), ms);
+    try {
+      escucha = await BLE.addListener("onScanResult", r => {
+        const nombre = r.localName || (r.device && r.device.name) || "";
+        if (r.device && (nombre === NOMBRE || (r.uuids || []).some(u => String(u).toLowerCase() === NUS))) fin(r.device.deviceId);
+      });
+      await BLE.requestLEScan({ services: [NUS] });
+    } catch (e) { fin(null, e); }
+  });
+}
+async function abrirNativo() {
+  await prepararBLE();
+  if (!idNativo) throw new Error("todavía no se encontró la estación");
+  const id = idNativo;
+  for (const h of escuchasNativas) { try { await h.remove(); } catch (e) {} }
+  escuchasNativas = [];
+  try { await BLE.disconnect({ deviceId: id }); } catch (e) {}          // limpia una conexión anterior colgada
+  await BLE.connect({ deviceId: id, timeout: 12000 });
+  escuchasNativas.push(await BLE.addListener("disconnected|" + id, () => {
+    if (dispositivo && dispositivo.gatt) dispositivo.gatt.connected = false;
+    alDesconectar();
+  }));
+  escuchasNativas.push(await BLE.addListener("notification|" + id + "|" + NUS + "|" + NUS_TX, ev => recibirBytes(valorABytes(ev && ev.value))));
+  await BLE.startNotifications({ deviceId: id, service: NUS, characteristic: NUS_TX });
+  // Mismos nombres que usa el Bluetooth web, así el resto de la app no cambia
+  rxChar = { writeValue: buf => BLE.write({ deviceId: id, service: NUS, characteristic: NUS_RX, value: bytesAHex(new Uint8Array(buf.buffer || buf)) }) };
+  dispositivo = { name: NOMBRE, gatt: { connected: true, disconnect: () => { dispositivo.gatt.connected = false; BLE.disconnect({ deviceId: id }).catch(() => {}); alDesconectar(); } } };
+}
+let conectandoNativo = false;
+async function conectarNativo() {
+  if (conectandoNativo) return;
+  conectandoNativo = true;
+  try {
+    manualOff = false;
+    estado("Preparando el Bluetooth…", "wait");
+    await prepararBLE();
+    if (!idNativo) idNativo = leer("bme_dev", null);
+    if (idNativo) { try { await abrirGATT(); return; } catch (e) {} }     // estación ya conocida: conexión directa
+    estado("Buscando “" + NOMBRE + "”…", "wait");
+    idNativo = await escanearNativo(20000);
+    guardar("bme_dev", idNativo);
+    await abrirGATT();
+  } catch (e) {
+    estado("No se pudo conectar: " + (e && e.message ? e.message : e) + ". Tocá Conectar para reintentar.", "");
+  } finally { conectandoNativo = false; }
+}
+
+function recibirBytes(v) {
+  buffer += decoder.decode(v, { stream: true });
+  let i;
+  while ((i = buffer.indexOf("\n")) >= 0) {
+    procesarLinea(buffer.slice(0, i));
+    buffer = buffer.slice(i + 1);
+  }
+  if (buffer.length > 2000) buffer = "";
+}
+
 // ===== Bluetooth =====
 async function conectar() {
+  if (NATIVO) return conectarNativo();
   if (!navigator.bluetooth) {
     const av = $("avisoBT");
     av.classList.remove("oculto");
@@ -1142,21 +1238,16 @@ async function conectar() {
 }
 
 async function abrirGATT() {
-  estado("Conectando a " + (dispositivo.name || NOMBRE) + "…", "wait");
-  const server = await dispositivo.gatt.connect();
-  const serv = await server.getPrimaryService(NUS);
-  const tx = await serv.getCharacteristic(NUS_TX);
-  rxChar = await serv.getCharacteristic(NUS_RX);
-  await tx.startNotifications();
-  tx.addEventListener("characteristicvaluechanged", ev => {
-    buffer += decoder.decode(ev.target.value, { stream: true });
-    let i;
-    while ((i = buffer.indexOf("\n")) >= 0) {
-      procesarLinea(buffer.slice(0, i));
-      buffer = buffer.slice(i + 1);
-    }
-    if (buffer.length > 2000) buffer = "";
-  });
+  estado("Conectando a " + ((dispositivo && dispositivo.name) || NOMBRE) + "…", "wait");
+  if (NATIVO) await abrirNativo();
+  else {
+    const server = await dispositivo.gatt.connect();
+    const serv = await server.getPrimaryService(NUS);
+    const tx = await serv.getCharacteristic(NUS_TX);
+    rxChar = await serv.getCharacteristic(NUS_RX);
+    await tx.startNotifications();
+    if (!conEscuchaTx.has(tx)) { tx.addEventListener("characteristicvaluechanged", ev => recibirBytes(ev.target.value)); conEscuchaTx.add(tx); }
+  }
   buffer = "";
   estado("Conectado a " + (dispositivo.name || NOMBRE) + " · llega una lectura por minuto", "on");
   $("btnConectar").textContent = "⏏️ Desconectar";
@@ -1195,6 +1286,7 @@ async function alDesconectar() {
 
 // ===== Conexión automática al abrir la app =====
 const conEscucha = new WeakSet();   // dispositivos que ya tienen el aviso de desconexión
+const conEscuchaTx = new WeakSet(); // características que ya tienen el aviso de datos
 function prepararDispositivo(d) {
   dispositivo = d;
   if (!conEscucha.has(d)) { d.addEventListener("gattserverdisconnected", alDesconectar); conEscucha.add(d); }
@@ -1202,6 +1294,7 @@ function prepararDispositivo(d) {
 
 // 1) Si Chrome recuerda la estación (getDevices), se conecta sin tocar nada.
 async function reconectarRecordado() {
+  if (NATIVO) { if (!reconectando) await conectarNativo(); return true; }   // la app nativa se conecta sola, sin toque
   if (!navigator.bluetooth || !navigator.bluetooth.getDevices) return false;
   let ds = [];
   try { ds = await navigator.bluetooth.getDevices(); } catch (e) { return false; }
@@ -1756,6 +1849,7 @@ if (leer("bme_fondo", false)) {
 }
 
 // ===== Arranque =====
+$("tipoApp").textContent = NATIVO ? "· app Android" : "· versión web";
 crearBanjo();
 crearNautico();
 aplicarEstilo(estiloInst);
@@ -1772,7 +1866,7 @@ let tab = leer("bme_tab", "vivo");
 if (tab === "log") tab = "pron";
 const bt = document.querySelector('.tabs button[data-tab="' + tab + '"]');
 if (bt) bt.click();
-if (!navigator.bluetooth) {
+if (!navigator.bluetooth && !NATIVO) {
   const av = $("avisoBT");
   av.classList.remove("oculto");
   av.innerHTML = "Bluetooth web no disponible acá. Usá <b>Chrome en Android</b> (o <b>Bluefy</b> en iPhone) y abrí la app por <b>https://</b>. " +
