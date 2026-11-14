@@ -1,0 +1,87 @@
+name: Compilar APK
+
+# Arma la app Android (Capacitor + Bluetooth nativo) a partir de index.html
+# y la deja para descargar en "Releases" como estacion-movil.apk
+
+on:
+  push:
+    branches: [main]
+    paths: ['index.html', 'sw.js', '.github/workflows/apk.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # La misma firma en todas las compilaciones, para poder actualizar la app sin desinstalarla.
+      # La primera vez se crea y se guarda en la carpeta "firma" del repositorio.
+      - name: Firma del APK
+        run: |
+          mkdir -p ~/.android
+          if [ -f firma/debug.keystore ]; then
+            cp firma/debug.keystore ~/.android/debug.keystore
+          else
+            keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+            mkdir -p firma
+            cp ~/.android/debug.keystore firma/debug.keystore
+            git config user.name "github-actions"
+            git config user.email "github-actions@users.noreply.github.com"
+            git add firma/debug.keystore
+            git commit -m "Firma fija para el APK"
+            git push
+          fi
+
+      - name: Armar el proyecto Capacitor
+        run: |
+          mkdir -p build/www
+          cp index.html build/www/
+          if [ -f sw.js ]; then cp sw.js build/www/; fi
+          cd build
+          echo '{"name":"estacion-movil","version":"1.0.0","private":true}' > package.json
+          npm install @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8 @capacitor-community/bluetooth-le@8
+          cp node_modules/@capacitor/core/dist/capacitor.js www/capacitor.js
+          echo '{"appId":"ar.estacion.movil","appName":"Estación Móvil","webDir":"www"}' > capacitor.config.json
+          npx cap add android
+          M=android/app/src/main/AndroidManifest.xml
+          grep -q 'xmlns:tools' $M || sed -i '0,/<manifest /s//<manifest xmlns:tools="http:\/\/schemas.android.com\/tools" /' $M
+          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" tools:targetApi="s" />\n</manifest>#' $M
+          sed -i 's/versionCode 1$/versionCode ${{ github.run_number }}/; s/versionName "1.0"/versionName "1.${{ github.run_number }}"/' android/app/build.gradle
+          npx cap sync android
+
+      - name: Compilar
+        run: |
+          cd build/android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk ../../estacion-movil.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: estacion-movil-apk
+          path: estacion-movil.apk
+
+      - name: Publicar para descargar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete apk --yes --cleanup-tag || true
+          sleep 3
+          gh release create apk estacion-movil.apk --title "Estación Móvil (APK)" --notes "Compilación N° ${{ github.run_number }}. Descargá estacion-movil.apk desde el teléfono e instalalo."
