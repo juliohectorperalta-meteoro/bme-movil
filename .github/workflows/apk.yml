@@ -1,4 +1,3 @@
-      
 name: Compilar APK
 
 # Arma la app Android (Capacitor + Bluetooth nativo) a partir de index.html
@@ -64,6 +63,151 @@ jobs:
           M=android/app/src/main/AndroidManifest.xml
           grep -q 'xmlns:tools' $M || sed -i '0,/<manifest /s//<manifest xmlns:tools="http:\/\/schemas.android.com\/tools" /' $M
           sed -i 's#</manifest>#    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" tools:targetApi="s" />\n</manifest>#' $M
+          # Código nativo propio: alarma hablada por el canal de alarmas + notificación de alarmas
+          J=android/app/src/main/java/ar/estacion/movil
+          cat > $J/AlarmaVozPlugin.java <<'JAVA'
+          package ar.estacion.movil;
+
+          import android.app.Notification;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.PendingIntent;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.media.AudioAttributes;
+          import android.media.AudioManager;
+          import android.media.ToneGenerator;
+          import android.os.Build;
+          import android.os.Handler;
+          import android.os.Looper;
+          import android.speech.tts.TextToSpeech;
+          import com.getcapacitor.Plugin;
+          import com.getcapacitor.PluginCall;
+          import com.getcapacitor.PluginMethod;
+          import com.getcapacitor.annotation.CapacitorPlugin;
+          import java.util.Locale;
+
+          // Alarma hablada por el canal de ALARMAS del teléfono (suena con el volumen de alarmas, como el reloj,
+          // aunque el volumen multimedia esté bajo) y notificación destacada de alarmas.
+          @CapacitorPlugin(name = "AlarmaVoz")
+          public class AlarmaVozPlugin extends Plugin {
+
+              private TextToSpeech tts;
+              private boolean ttsListo = false;
+
+              @Override
+              public void load() {
+                  tts = new TextToSpeech(getContext(), status -> {
+                      if (status == TextToSpeech.SUCCESS && tts != null) {
+                          tts.setAudioAttributes(
+                              new AudioAttributes.Builder()
+                                  .setUsage(AudioAttributes.USAGE_ALARM)
+                                  .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                  .build()
+                          );
+                          int r = tts.setLanguage(new Locale("es", "AR"));
+                          if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
+                              tts.setLanguage(new Locale("es"));
+                          }
+                          tts.setSpeechRate(0.95f);
+                          ttsListo = true;
+                      }
+                  });
+              }
+
+              @PluginMethod
+              public void hablar(final PluginCall call) {
+                  final String texto = call.getString("texto", "");
+                  final int repeticiones = Math.max(1, Math.min(5, call.getInt("repeticiones", 2)));
+                  final Handler principal = new Handler(Looper.getMainLooper());
+                  // Tres segundos de tono de aviso por el canal de alarmas, y después la frase
+                  try {
+                      final ToneGenerator tono = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
+                      tono.startTone(ToneGenerator.TONE_CDMA_EMERGENCY_RINGBACK, 1500);
+                      principal.postDelayed(tono::release, 1900);
+                  } catch (Exception e) {
+                      // sin tono: se sigue con la voz
+                  }
+                  principal.postDelayed(
+                      () -> {
+                          if (!ttsListo || tts == null) {
+                              call.reject("La voz del teléfono no está disponible (falta el motor de texto a voz en español)");
+                              return;
+                          }
+                          for (int i = 0; i < repeticiones; i++) {
+                              tts.speak(texto, i == 0 ? TextToSpeech.QUEUE_FLUSH : TextToSpeech.QUEUE_ADD, null, "alarma" + i);
+                              if (i < repeticiones - 1) {
+                                  tts.playSilentUtterance(700, TextToSpeech.QUEUE_ADD, "pausa" + i);
+                              }
+                          }
+                          call.resolve();
+                      },
+                      1700
+                  );
+              }
+
+              @PluginMethod
+              public void notificar(PluginCall call) {
+                  String titulo = call.getString("titulo", "Alarma");
+                  String texto = call.getString("texto", "");
+                  try {
+                      Context ctx = getContext();
+                      NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+                      Notification.Builder b;
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                          NotificationChannel canal = new NotificationChannel("alarmas", "Alarmas meteorológicas", NotificationManager.IMPORTANCE_HIGH);
+                          canal.enableVibration(true);
+                          nm.createNotificationChannel(canal);
+                          b = new Notification.Builder(ctx, "alarmas");
+                      } else {
+                          b = new Notification.Builder(ctx);
+                          b.setPriority(Notification.PRIORITY_HIGH);
+                          b.setDefaults(Notification.DEFAULT_ALL);
+                      }
+                      int icono = ctx.getResources().getIdentifier("ic_estacion", "drawable", ctx.getPackageName());
+                      if (icono == 0) {
+                          icono = android.R.drawable.ic_dialog_alert;
+                      }
+                      Intent abrir = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName());
+                      PendingIntent alTocar = PendingIntent.getActivity(ctx, 0, abrir, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                      b.setSmallIcon(icono)
+                          .setContentTitle(titulo)
+                          .setContentText(texto)
+                          .setStyle(new Notification.BigTextStyle().bigText(texto))
+                          .setAutoCancel(true)
+                          .setContentIntent(alTocar);
+                      nm.notify(7002, b.build());
+                      call.resolve();
+                  } catch (Exception e) {
+                      call.reject("No se pudo mostrar la notificación: " + e.getMessage());
+                  }
+              }
+
+              @Override
+              protected void handleOnDestroy() {
+                  if (tts != null) {
+                      tts.stop();
+                      tts.shutdown();
+                      tts = null;
+                  }
+              }
+          }
+          JAVA
+          cat > $J/MainActivity.java <<'JAVA'
+          package ar.estacion.movil;
+
+          import android.os.Bundle;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  registerPlugin(AlarmaVozPlugin.class);
+                  super.onCreate(savedInstanceState);
+              }
+          }
+          JAVA
           # Servicio permanente (segundo plano): permisos, servicio y su ícono de notificación
           sed -i 's#</manifest>#    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n</manifest>#' $M
           sed -i 's#</application>#        <receiver android:name="io.capawesome.capacitorjs.plugins.foregroundservice.NotificationActionBroadcastReceiver" />\n        <service android:name="io.capawesome.capacitorjs.plugins.foregroundservice.AndroidForegroundService" android:foregroundServiceType="connectedDevice" />\n    </application>#' $M
@@ -91,3 +235,5 @@ jobs:
           gh release delete apk --yes --cleanup-tag || true
           sleep 3
           gh release create apk estacion-movil.apk --title "Estación Móvil (APK)" --notes "Compilación N° ${{ github.run_number }}. Descargá estacion-movil.apk desde el teléfono e instalalo."
+      
+
