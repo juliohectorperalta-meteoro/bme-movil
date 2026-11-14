@@ -229,7 +229,7 @@
   </section>
 
   <section id="tab-cfg" class="oculto">
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>14/11/2026 · 14:10</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>14/11/2026 · 16:30</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -1144,10 +1144,12 @@ async function prepararBLE() {
   const en = await BLE.isEnabled();
   if (!en.value) { try { await BLE.requestEnable(); } catch (e) { throw new Error("el Bluetooth del teléfono está apagado"); } }
 }
-// Busca la estación por su servicio UART o por su nombre y devuelve su identificador
+// Busca la estación entre todos los equipos Bluetooth cercanos (sin filtro, como las apps de escaneo:
+// en algunos teléfonos el filtro por servicio no ve el anuncio) y devuelve su identificador.
 function escanearNativo(ms) {
   return new Promise(async (res, rej) => {
     let escucha = null, hecho = false;
+    const vistos = new Map();
     const fin = async (id, err) => {
       if (hecho) return; hecho = true;
       clearTimeout(reloj);
@@ -1155,13 +1157,26 @@ function escanearNativo(ms) {
       try { if (escucha) await escucha.remove(); } catch (e) {}
       err ? rej(err) : res(id);
     };
-    const reloj = setTimeout(() => fin(null, new Error("no se encontró la estación (¿está encendida y cerca?)")), ms);
+    const reloj = setTimeout(async () => {
+      const nombres = [...vistos.values()].filter(Boolean);
+      let pista;
+      if (!vistos.size) {
+        pista = "no se vio ningún equipo Bluetooth: revisá que la app tenga el permiso de “Dispositivos cercanos”";
+        try { const u = await BLE.isLocationEnabled(); if (u && u.value === false) pista += " y activá la Ubicación del teléfono"; } catch (e) {}
+      } else {
+        pista = "se vieron " + vistos.size + " equipos, pero ninguno es “" + NOMBRE + "”" + (nombres.length ? " (" + nombres.slice(0, 6).join(", ") + ")" : "");
+      }
+      fin(null, new Error(pista));
+    }, ms);
     try {
       escucha = await BLE.addListener("onScanResult", r => {
-        const nombre = r.localName || (r.device && r.device.name) || "";
-        if (r.device && (nombre === NOMBRE || (r.uuids || []).some(u => String(u).toLowerCase() === NUS))) fin(r.device.deviceId);
+        if (!r || !r.device) return;
+        const nombre = r.localName || r.device.name || "";
+        vistos.set(r.device.deviceId, nombre);
+        if (!hecho) estado("Buscando “" + NOMBRE + "”… (" + vistos.size + " equipos vistos)", "wait");
+        if (nombre.trim() === NOMBRE || (r.uuids || []).some(u => String(u).toLowerCase() === NUS)) fin(r.device.deviceId);
       });
-      await BLE.requestLEScan({ services: [NUS] });
+      await BLE.requestLEScan({ scanMode: 2, allowDuplicates: false });
     } catch (e) { fin(null, e); }
   });
 }
@@ -1193,12 +1208,22 @@ async function conectarNativo() {
     await prepararBLE();
     if (!idNativo) idNativo = leer("bme_dev", null);
     if (idNativo) { try { await abrirGATT(); return; } catch (e) {} }     // estación ya conocida: conexión directa
-    estado("Buscando “" + NOMBRE + "”…", "wait");
-    idNativo = await escanearNativo(20000);
+    // Si otra app del teléfono (por ejemplo la versión web en Chrome) ya la tiene conectada, la estación
+    // deja de anunciarse y la búsqueda no la ve: en ese caso se usa la conexión que ya existe.
+    idNativo = null;
+    try {
+      const ya = await BLE.getConnectedDevices({ services: [NUS] });
+      const d = ((ya && ya.devices) || []).find(x => !x.name || x.name === NOMBRE) || null;
+      if (d) idNativo = d.deviceId;
+    } catch (e) {}
+    if (!idNativo) {
+      estado("Buscando “" + NOMBRE + "”…", "wait");
+      idNativo = await escanearNativo(20000);
+    }
     guardar("bme_dev", idNativo);
     await abrirGATT();
   } catch (e) {
-    estado("No se pudo conectar: " + (e && e.message ? e.message : e) + ". Tocá Conectar para reintentar.", "");
+    estado("No se pudo conectar: " + (e && e.message ? e.message : e) + ". Si tenés abierta la versión web (Chrome), cerrala. Tocá Conectar para reintentar.", "");
   } finally { conectandoNativo = false; }
 }
 
