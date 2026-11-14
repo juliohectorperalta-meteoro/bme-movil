@@ -229,7 +229,7 @@
   </section>
 
   <section id="tab-cfg" class="oculto">
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>14/11/2026 · 16:30</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>14/11/2026 · 16:50</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -1128,10 +1128,15 @@ function valorABytes(v) {             // el complemento entrega texto hexadecima
   for (let i = 0; i < u.length; i++) u[i] = parseInt(h.substr(i * 2, 2), 16);
   return u;
 }
+// OJO: el complemento nunca se pasa por una promesa (res(BLE) o return desde async): es un Proxy que
+// responde a cualquier nombre, también a "then", y la promesa quedaría esperando para siempre.
+function conLimite(promesa, ms, queFallo) {
+  return Promise.race([promesa, new Promise((_, rej) => setTimeout(() => rej(new Error(queFallo)), ms))]);
+}
 function cargarPluginBLE() {
   return new Promise((res, rej) => {
-    if (BLE) return res(BLE);
-    const listo = () => { try { BLE = capacitorExports.registerPlugin("BluetoothLe"); res(BLE); } catch (e) { rej(e); } };
+    if (BLE) return res();
+    const listo = () => { try { BLE = capacitorExports.registerPlugin("BluetoothLe"); res(); } catch (e) { rej(e); } };
     if (window.capacitorExports) return listo();
     const sc = document.createElement("script");
     sc.src = "capacitor.js"; sc.onload = listo; sc.onerror = () => rej(new Error("falta capacitor.js en la app"));
@@ -1139,9 +1144,14 @@ function cargarPluginBLE() {
   });
 }
 async function prepararBLE() {
-  await cargarPluginBLE();
-  if (!bleIniciado) { await BLE.initialize({ androidNeverForLocation: true }); bleIniciado = true; }   // pide los permisos la primera vez
-  const en = await BLE.isEnabled();
+  await conLimite(cargarPluginBLE(), 10000, "no cargó el complemento de Bluetooth");
+  if (!bleIniciado) {                                    // pide los permisos la primera vez
+    estado("Preparando el Bluetooth… si aparece un cartel de permiso, tocá Permitir", "wait");
+    await conLimite(BLE.initialize({ androidNeverForLocation: true }), 60000,
+      "el permiso no respondió: en Ajustes → Aplicaciones → Estación Móvil → Permisos, permití “Dispositivos cercanos”");
+    bleIniciado = true;
+  }
+  const en = await conLimite(BLE.isEnabled(), 10000, "el teléfono no informó el estado del Bluetooth");
   if (!en.value) { try { await BLE.requestEnable(); } catch (e) { throw new Error("el Bluetooth del teléfono está apagado"); } }
 }
 // Busca la estación entre todos los equipos Bluetooth cercanos (sin filtro, como las apps de escaneo:
