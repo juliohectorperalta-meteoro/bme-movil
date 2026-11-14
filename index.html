@@ -82,6 +82,13 @@
   .graf{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px 10px 4px;margin-bottom:10px}
   .graf h3{font-size:13px;color:var(--sub);margin:2px 4px 6px;font-weight:600;display:flex;justify-content:space-between}
   svg{width:100%;height:150px;display:block}
+  #banjo svg{height:auto;max-width:330px;margin:0 auto;aspect-ratio:300/830}
+  .tabs button{white-space:nowrap}
+  #nautico svg{height:auto;max-width:400px;margin:0 auto;aspect-ratio:1/1}
+  .tabs{overflow-x:auto;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tabs button{flex:1 0 auto;padding-left:12px;padding-right:12px}
+  @media (max-width:430px){.tabs{gap:4px}.tabs button{font-size:13px;padding:9px 10px}}
   .vacio{color:var(--sub);font-size:14px;text-align:center;padding:24px 8px}
   .log{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px 12px;font-family:ui-monospace,Menlo,monospace;
        font-size:12px;max-height:260px;overflow:auto;white-space:pre-wrap;word-break:break-word}
@@ -123,6 +130,18 @@
   .alr.ok{background:rgba(34,197,94,.10);border-color:rgba(34,197,94,.35);padding:7px 12px;font-size:13px}
   .alr.oficial .t{animation:parpadeo 1.6s ease-in-out infinite}
   @keyframes parpadeo{50%{opacity:.55}}
+  .md{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .md .card .v{font-size:24px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
+  .md .card .v small{font-size:13px;font-weight:500;color:var(--sub);margin-left:3px}
+  .md .card .n{font-size:12px;color:var(--sub);margin-top:4px;line-height:1.35}
+  .md .ancho{grid-column:1/-1}
+  .md table{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px;font-variant-numeric:tabular-nums}
+  .md td{padding:5px 2px;border-bottom:1px solid var(--line)}
+  .md tr:last-child td{border:0}
+  .md td.h{color:var(--sub);font-size:12px}
+  .astro svg{height:auto;aspect-ratio:600/210}
+  .astro .fila{display:flex;justify-content:space-between;gap:8px;font-size:14px;margin-top:6px;flex-wrap:wrap;font-variant-numeric:tabular-nums}
+  .astro .fila b{font-size:17px}
   .tend-up{color:var(--ok)} .tend-down{color:var(--err)}
 </style>
 </head>
@@ -143,7 +162,7 @@
 
   <div class="hora" id="hora">Sin lecturas todavía</div>
 
-  <div class="grid">
+  <div class="grid" id="gridInst">
     <div class="card inst" id="gT"></div>
     <div class="card inst" id="gH"></div>
     <div class="card inst" id="gR"></div>
@@ -159,6 +178,9 @@
 
   <div class="tabs">
     <button data-tab="vivo" class="act">En vivo</button>
+    <button data-tab="clasico">Clásico</button>
+    <button data-tab="nautico">Náutico</button>
+    <button data-tab="mas">Más datos</button>
     <button data-tab="ts">ThingSpeak</button>
     <button data-tab="pron">Pronóstico</button>
     <button data-tab="cfg">⚙️</button>
@@ -167,6 +189,23 @@
   <section id="tab-vivo">
     <div id="graficosVivo"></div>
     <div class="row"><button class="sec" id="btnBorrar">Borrar historial en vivo</button></div>
+  </section>
+
+  <section id="tab-clasico" class="oculto">
+    <div id="banjo"></div>
+    <div id="banjoTxt" style="text-align:center;margin-top:10px;font-size:19.5px;font-weight:700;font-variant-numeric:tabular-nums"></div>
+    <div class="estado" id="banjoRef" style="text-align:center;margin-top:4px"></div>
+  </section>
+
+  <section id="tab-nautico" class="oculto">
+    <div id="nautico"></div>
+    <div id="nauTxt" style="text-align:center;margin-top:10px;font-size:19.5px;font-weight:700;font-variant-numeric:tabular-nums"></div>
+    <div class="estado" id="nauRef" style="text-align:center;margin-top:4px"></div>
+  </section>
+
+  <section id="tab-mas" class="oculto">
+    <div id="masDatos"><div class="vacio">Todavía no hay lecturas.</div></div>
+    <div id="astro" class="md" style="margin-top:10px"></div>
   </section>
 
   <section id="tab-ts" class="oculto">
@@ -190,11 +229,14 @@
   </section>
 
   <section id="tab-cfg" class="oculto">
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>14/11/2026 · 13:25</b></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
         aunque la pantalla esté apagada o uses otra aplicación.</p>
-      <div class="row"><button class="sec" id="btnFondo">🌙 Activar segundo plano</button></div>
+      <div class="row"><button class="sec" id="btnFondo">🌙 Activar segundo plano</button>
+        <button class="sec" id="btnProbarVoz">🔊 Probar aviso de 5 min</button>
+        <button class="sec" id="btnProbarVoz15">🔊 Probar aviso de 15 min</button></div>
       <div class="estado" id="estadoFondo"></div>
     </div>
     <div class="card" style="margin-bottom:10px">
@@ -320,7 +362,12 @@ function agregarLog(linea) {
 
 document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("act", x === b));
-  ["vivo", "ts", "pron", "cfg"].forEach(t => $("tab-" + t).classList.toggle("oculto", t !== b.dataset.tab));
+  ["vivo", "clasico", "nautico", "mas", "ts", "pron", "cfg"].forEach(t => $("tab-" + t).classList.toggle("oculto", t !== b.dataset.tab));
+  // En "Clásico" se ven solo el termómetro y el barómetro de pared
+  if (b.dataset.tab === "ts" && cfg && cfg.canal) cargarThingSpeak();
+  if (b.dataset.tab === "mas") dibujarAstro();
+  const clasico = ["clasico", "nautico", "mas"].includes(b.dataset.tab);
+  ["gridInst", "extQ", "extT", "extP"].forEach(id => $(id).classList.toggle("oculto", clasico));
   guardar("bme_tab", b.dataset.tab);
 }));
 
@@ -334,6 +381,380 @@ function arco(r, a1, a2) {
 }
 
 const instrumentos = {};
+
+// ===== Pestaña "Clásico": barómetro de pared con termómetro de mercurio =====
+const BJ = { cx: 150, cy: 560, tMin: -10, tMax: 50, yMin: 350, yMax: 158, yBulbo: 366, qMin: 960, qMax: 1050 };
+function crearBanjo() {
+  const P = (r, a) => { const k = a * Math.PI / 180; return [BJ.cx + r * Math.sin(k), BJ.cy - r * Math.cos(k)]; };
+  const ang = v => -135 + 270 * (Math.min(Math.max(v, BJ.qMin), BJ.qMax) - BJ.qMin) / (BJ.qMax - BJ.qMin);
+  const yT = t => BJ.yMin - (t - BJ.tMin) * (BJ.yMin - BJ.yMax) / (BJ.tMax - BJ.tMin);
+  const serif = 'font-family="Playfair Display,Georgia,serif"';
+  let g = '<svg viewBox="0 0 300 830" role="img" aria-label="Barómetro de pared con termómetro"><defs>' +
+    '<clipPath id="bjClip"><path d="M100 36 L200 36 L192 120 L108 120 Z"/><rect x="108" y="110" width="84" height="300"/>' +
+      '<path d="M108 380 Q108 445 50 505 L250 505 Q192 445 192 380 Z"/><circle cx="150" cy="560" r="130"/>' +
+      '<path d="M96 670 Q104 690 90 715 L210 715 Q196 690 204 670 Z"/><circle cx="150" cy="745" r="66"/></clipPath>' +
+    '<linearGradient id="bjMad" gradientUnits="userSpaceOnUse" x1="20" y1="0" x2="280" y2="0"><stop offset="0" stop-color="#6e4420"/>' +
+      '<stop offset=".3" stop-color="#a8703a"/><stop offset=".55" stop-color="#b98146"/><stop offset=".8" stop-color="#96602f"/><stop offset="1" stop-color="#6a401d"/></linearGradient>' +
+    '<linearGradient id="bjLat" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6e3a1"/><stop offset=".5" stop-color="#c9983c"/><stop offset="1" stop-color="#7d5718"/></linearGradient>' +
+    '<linearGradient id="bjPlaca" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#b58a35"/><stop offset=".5" stop-color="#ecd58e"/><stop offset="1" stop-color="#b08430"/></linearGradient>' +
+    '<radialGradient id="bjCara" cx="42%" cy="36%" r="80%"><stop offset="0" stop-color="#fbfbf8"/><stop offset=".7" stop-color="#deded9"/><stop offset="1" stop-color="#b9bab4"/></radialGradient>' +
+    '<linearGradient id="bjHg" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#5f656b"/><stop offset=".45" stop-color="#cfd4d9"/><stop offset="1" stop-color="#565c62"/></linearGradient>' +
+    '<linearGradient id="bjVid" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".5"/><stop offset=".5" stop-color="#fff" stop-opacity=".05"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>' +
+    '<filter id="bjSom" x="-20%" y="-5%" width="140%" height="112%"><feDropShadow dx="3" dy="5" stdDeviation="5" flood-color="#000" flood-opacity=".55"/></filter>' +
+    "</defs>";
+  // cuerpo de madera con veta
+  g += '<g filter="url(#bjSom)"><g clip-path="url(#bjClip)"><rect x="0" y="0" width="300" height="830" fill="url(#bjMad)"/>';
+  for (let i = 0; i < 16; i++) {
+    const x = 28 + i * 16.5, o = (i * 37) % 11 - 5;
+    g += '<path d="M' + x + " 0 C" + (x + o) + " 250," + (x - o) + " 520," + (x + o * .6) + ' 830" stroke="#3c2410" stroke-width="' + (i % 3 ? .7 : 1.3) + '" fill="none" opacity=".22"/>';
+  }
+  g += "</g></g>";
+  // remate superior oscuro y botón de bronce
+  g += '<rect x="92" y="20" width="38" height="17" rx="2" fill="#1d1410" transform="rotate(-22 111 28)"/>';
+  g += '<rect x="170" y="20" width="38" height="17" rx="2" fill="#1d1410" transform="rotate(22 189 28)"/>';
+  g += '<circle cx="150" cy="88" r="9" fill="url(#bjLat)" stroke="#5a3d12"/><circle cx="150" cy="88" r="3" fill="#7d5718"/>';
+  // termómetro: placa de bronce, escala, tubo de vidrio y mercurio
+  g += '<rect x="124" y="128" width="52" height="266" rx="3" fill="url(#bjPlaca)" stroke="#6b4a14"/>';
+  g += '<text x="150" y="146" font-size="9" ' + serif + ' font-style="italic" text-anchor="middle" fill="#2a1d0c">°C</text>';
+  for (let t = BJ.tMin; t <= BJ.tMax; t += 2) {
+    const y = yT(t).toFixed(1), dec = t % 10 === 0;
+    g += '<line x1="' + (dec ? 155 : 155) + '" x2="' + (dec ? 165 : 160) + '" y1="' + y + '" y2="' + y + '" stroke="#2a1d0c" stroke-width="' + (dec ? 1.2 : .6) + '"/>';
+    g += '<line x1="' + (dec ? 135 : 140) + '" x2="145" y1="' + y + '" y2="' + y + '" stroke="#2a1d0c" stroke-width="' + (dec ? 1.2 : .6) + '"/>';
+    if (dec) g += '<text x="133" y="' + (yT(t) + 3) + '" font-size="8.5" font-weight="700" ' + serif + ' text-anchor="end" fill="#2a1d0c">' + t + "</text>";
+  }
+  g += '<rect x="146.5" y="152" width="7" height="216" rx="3.5" fill="#fff" fill-opacity=".55" stroke="#8a8f94" stroke-width=".6"/>';
+  g += '<rect id="bjCol" x="148.3" y="' + BJ.yMax + '" width="3.4" height="' + (BJ.yBulbo - BJ.yMax) + '" fill="url(#bjHg)" style="transform-box:view-box;transform-origin:150px ' +
+       BJ.yBulbo + 'px;transform:scaleY(.02);transition:transform 1.5s ease"/>';
+  g += '<circle cx="150" cy="374" r="8.5" fill="url(#bjHg)" stroke="#6d7379" stroke-width=".6"/><circle cx="147.5" cy="371.5" r="2.2" fill="#fff" opacity=".8"/>';
+  // barómetro: aro de bronce y esfera plateada
+  g += '<circle cx="150" cy="560" r="106" fill="#2a1a0c"/><circle cx="150" cy="560" r="104" fill="url(#bjLat)"/>';
+  g += '<circle cx="150" cy="560" r="94" fill="#4a3415"/><circle cx="150" cy="560" r="92.5" fill="url(#bjCara)"/>';
+  g += '<circle cx="150" cy="560" r="87" fill="none" stroke="#222" stroke-width=".7"/><circle cx="150" cy="560" r="76" fill="none" stroke="#222" stroke-width=".4"/>';
+  for (let v = BJ.qMin; v <= BJ.qMax; v += 1) {
+    const a = ang(v), dec = v % 10 === 0, cin = v % 5 === 0;
+    const [x1, y1] = P(dec ? 76 : cin ? 79 : 82, a), [x2, y2] = P(87, a);
+    g += '<line x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '" stroke="#111" stroke-width="' + (dec ? 1.6 : cin ? 1 : .5) + '"/>';
+    if (dec) { const [tx, ty] = P(66, a); g += '<text x="' + tx.toFixed(1) + '" y="' + (ty + 3.5).toFixed(1) + '" font-size="9.5" font-weight="700" ' + serif + ' text-anchor="middle" fill="#111">' + v + "</text>"; }
+  }
+  for (const [v, txt] of [[968, "Tormenta"], [988, "Lluvia"], [1005, "Variable"], [1022, "Buen tiempo"], [1042, "Muy seco"]]) {
+    const [tx, ty] = P(37, ang(v));
+    g += '<text x="' + tx.toFixed(1) + '" y="' + (ty + 3).toFixed(1) + '" font-size="7.5" font-style="italic" ' + serif + ' text-anchor="middle" fill="#222">' + txt + "</text>";
+  }
+  g += '<text x="150" y="622" font-size="8" letter-spacing="1.5" ' + serif + ' text-anchor="middle" fill="#333">BARÓMETRO</text>';
+  g += '<text x="150" y="634" font-size="8" font-style="italic" ' + serif + ' text-anchor="middle" fill="#444">hPa</text>';
+  const eje = "transform-box:view-box;transform-origin:150px 560px;";
+  g += '<g id="bjRef" opacity="0" style="' + eje + 'transform:rotate(-135deg);transition:transform 1.2s ease">' +
+       '<polygon points="150,478 151.6,560 148.4,560" fill="#b8862b"/><polygon points="150,472 154,484 146,484" fill="#b8862b"/></g>';
+  g += '<g id="bjAguja" style="' + eje + 'transform:rotate(-135deg);transition:transform 1.4s cubic-bezier(.3,1.4,.5,1)">' +
+       '<polygon points="150,476 151.5,556 150,560 148.5,556" fill="#0e0e0e"/><polygon points="148.7,560 151.3,560 151.8,584 148.2,584" fill="#0e0e0e"/>' +
+       '<circle cx="150" cy="584" r="4.5" fill="#0e0e0e"/></g>';
+  g += '<circle cx="150" cy="560" r="7.5" fill="url(#bjLat)" stroke="#5a3d12"/><circle cx="150" cy="560" r="2" fill="#5a3d12"/>';
+  g += '<path d="M76 540 A78 78 0 0 1 205 506 A92 92 0 0 0 76 540 Z" fill="url(#bjVid)"/>';
+  // higrómetro en el círculo inferior (0 a 100 %)
+  const HX = 150, HY = 745;
+  const PH = (r, an) => { const k = an * Math.PI / 180; return [HX + r * Math.sin(k), HY - r * Math.cos(k)]; };
+  const angH = h => -135 + 270 * Math.min(Math.max(h, 0), 100) / 100;
+  g += '<circle cx="150" cy="745" r="43" fill="#2a1a0c"/><circle cx="150" cy="745" r="41.5" fill="url(#bjLat)"/>';
+  g += '<circle cx="150" cy="745" r="35" fill="#4a3415"/><circle cx="150" cy="745" r="34" fill="url(#bjCara)"/>';
+  g += '<circle cx="150" cy="745" r="31" fill="none" stroke="#222" stroke-width=".5"/>';
+  for (let h = 0; h <= 100; h += 5) {
+    const an = angH(h), dec = h % 10 === 0;
+    const [x1, y1] = PH(dec ? 26.5 : 28.5, an), [x2, y2] = PH(31, an);
+    g += '<line x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '" stroke="#111" stroke-width="' + (dec ? 1 : .5) + '"/>';
+    if (h % 20 === 0) { const [tx, ty] = PH(20.5, an); g += '<text x="' + tx.toFixed(1) + '" y="' + (ty + 2.3).toFixed(1) + '" font-size="6.5" font-weight="700" ' + serif + ' text-anchor="middle" fill="#111">' + h + "</text>"; }
+  }
+  g += '<text x="150" y="768" font-size="6.5" font-style="italic" ' + serif + ' text-anchor="middle" fill="#444">%</text>';
+  g += '<g id="bjHum" style="transform-box:view-box;transform-origin:150px 745px;transform:rotate(-135deg);transition:transform 1.4s cubic-bezier(.3,1.4,.5,1)">' +
+       '<polygon points="150,716 151,743 150,745 149,743" fill="#0e0e0e"/><polygon points="149.2,745 150.8,745 151,753 149,753" fill="#0e0e0e"/></g>';
+  g += '<circle cx="150" cy="745" r="3.2" fill="url(#bjLat)" stroke="#5a3d12" stroke-width=".6"/>';
+  g += '<path d="M124 737 A28 28 0 0 1 168 722 A34 34 0 0 0 124 737 Z" fill="url(#bjVid)"/>';
+  BJ.angH = angH;
+  g += "</svg>";
+  $("banjo").innerHTML = g;
+  BJ.ang = ang; BJ.yT = yT;
+}
+function fijarBanjo(T, Q, q3h, H) {
+  if (!BJ.ang) return;
+  if (!isNaN(T)) {
+    const tt = Math.min(Math.max(T, BJ.tMin - 2), BJ.tMax + 1);
+    $("bjCol").style.transform = "scaleY(" + ((BJ.yBulbo - BJ.yT(tt)) / (BJ.yBulbo - BJ.yMax)).toFixed(4) + ")";
+  }
+  if (!isNaN(Q)) $("bjAguja").style.transform = "rotate(" + BJ.ang(Q).toFixed(1) + "deg)";
+  if (H !== undefined && !isNaN(H)) $("bjHum").style.transform = "rotate(" + BJ.angH(H).toFixed(1) + "deg)";
+  const ref = $("bjRef");
+  if (q3h === undefined || isNaN(q3h)) ref.setAttribute("opacity", "0");
+  else { ref.setAttribute("opacity", "1"); ref.style.transform = "rotate(" + BJ.ang(q3h).toFixed(1) + "deg)"; }
+  $("banjoTxt").textContent = (isNaN(T) ? "--" : T.toFixed(1)) + " °C · " + (H === undefined || isNaN(H) ? "--" : H.toFixed(0)) + " % · QNH " + (isNaN(Q) ? "--" : Q.toFixed(1)) + " hPa";
+  $("banjoRef").textContent = isNaN(q3h) || q3h === undefined ? "" : "Aguja de bronce = hace 3 h (" + q3h.toFixed(1) + " hPa)";
+}
+
+// ===== Pestaña "Náutico": instrumento de barco (barómetro arriba, termómetro e higrómetro abajo) =====
+const NA = { qMin: 960, qMax: 1050, sweep: 115 };
+function crearNautico() {
+  const pol = (cx, cy, r, a) => { const k = a * Math.PI / 180; return [cx + r * Math.sin(k), cy - r * Math.cos(k)]; };
+  const angQ = v => -NA.sweep + 2 * NA.sweep * (Math.min(Math.max(v, NA.qMin), NA.qMax) - NA.qMin) / (NA.qMax - NA.qMin);
+  const ang270 = (v, mn, mx) => -135 + 270 * (Math.min(Math.max(v, mn), mx) - mn) / (mx - mn);
+  const arc = (cx, cy, r, a1, a2) => { const [x1, y1] = pol(cx, cy, r, a1), [x2, y2] = pol(cx, cy, r, a2);
+    return "M" + x1.toFixed(1) + " " + y1.toFixed(1) + " A" + r + " " + r + " 0 " + (a2 - a1 > 180 ? 1 : 0) + " 1 " + x2.toFixed(1) + " " + y2.toFixed(1); };
+  const serif = 'font-family="Playfair Display,Georgia,serif"';
+  const L = (x1, y1, x2, y2, w) => '<line x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '" stroke="#111" stroke-width="' + w + '"/>';
+  let g = '<svg viewBox="0 0 400 400" role="img" aria-label="Instrumento náutico: barómetro, termómetro e higrómetro"><defs>' +
+    '<linearGradient id="naOro" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff3b8"/><stop offset=".25" stop-color="#e9c348"/>' +
+      '<stop offset=".5" stop-color="#fbe98f"/><stop offset=".75" stop-color="#c8961f"/><stop offset="1" stop-color="#8a6410"/></linearGradient>' +
+    '<linearGradient id="naOro2" x1="1" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#fff3b8"/><stop offset=".4" stop-color="#d9ad33"/><stop offset="1" stop-color="#8a6410"/></linearGradient>' +
+    '<radialGradient id="naCara" cx="45%" cy="38%" r="75%"><stop offset="0" stop-color="#ffffff"/><stop offset=".8" stop-color="#f4f4f1"/><stop offset="1" stop-color="#dcdcd6"/></radialGradient>' +
+    '<linearGradient id="naVid" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".5" stop-color="#fff" stop-opacity=".04"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>' +
+    '<filter id="naSom" x="-10%" y="-10%" width="120%" height="125%"><feDropShadow dx="2" dy="6" stdDeviation="6" flood-color="#000" flood-opacity=".5"/></filter></defs>';
+  // caja de bronce pulido (tipo ojo de buey) y esfera blanca
+  g += '<circle cx="200" cy="200" r="194" fill="url(#naOro)" filter="url(#naSom)"/>';
+  g += '<circle cx="200" cy="200" r="178" fill="url(#naOro2)"/><circle cx="200" cy="200" r="166" fill="url(#naOro)"/>';
+  g += '<circle cx="200" cy="200" r="160" fill="#6b4c0c"/><circle cx="200" cy="200" r="158.5" fill="url(#naCara)"/>';
+  // barómetro: pista doble en el arco superior
+  g += '<path d="' + arc(200, 200, 146, -NA.sweep, NA.sweep) + '" stroke="#111" stroke-width="1" fill="none"/>';
+  g += '<path d="' + arc(200, 200, 132, -NA.sweep, NA.sweep) + '" stroke="#111" stroke-width="1" fill="none"/>';
+  for (let v = NA.qMin; v <= NA.qMax; v++) {
+    const a = angQ(v), dec = v % 10 === 0, cin = v % 5 === 0;
+    const [x1, y1] = pol(200, 200, dec ? 132 : cin ? 136 : 139, a), [x2, y2] = pol(200, 200, 146, a);
+    g += L(x1, y1, x2, y2, dec ? 1.8 : cin ? 1.1 : .6);
+    if (dec) { const [tx, ty] = pol(200, 200, 119, a);
+      g += '<text x="' + tx.toFixed(1) + '" y="' + (ty + 4).toFixed(1) + '" font-size="11.5" font-weight="700" ' + serif + ' text-anchor="middle" fill="#111" transform="rotate(' + a.toFixed(1) + " " + tx.toFixed(1) + " " + ty.toFixed(1) + ')">' + v + "</text>"; }
+  }
+  for (const [v, txt] of [[978, "Lluvia"], [1005, "Variable"], [1032, "Bueno"]]) {
+    const a = angQ(v), [tx, ty] = pol(200, 200, 92, a);
+    g += '<text x="' + tx.toFixed(1) + '" y="' + (ty + 6).toFixed(1) + '" font-size="19" font-style="italic" ' + serif + ' text-anchor="middle" fill="#111" transform="rotate(' + a.toFixed(1) + " " + tx.toFixed(1) + " " + ty.toFixed(1) + ')">' + txt + "</text>";
+  }
+  g += '<text x="200" y="158" font-size="10" font-style="italic" ' + serif + ' text-anchor="middle" fill="#333">hPa</text>';
+  // temperatura y humedad con agujas cruzadas: cada aguja pivota de un lado y marca en la escala del lado opuesto
+  const PR = [245, 295], PL = [155, 295], RE = 105;
+  const angT = t => -105 + (Math.min(Math.max(t, -10), 50) + 10);          // escala a la izquierda, 1 °C por grado
+  const angH = h => 105 - 60 * Math.min(Math.max(h, 0), 100) / 100;        // escala a la derecha
+  g += '<path d="' + arc(PR[0], PR[1], RE, -105, -45) + '" stroke="#111" stroke-width="1" fill="none"/>';
+  g += '<path d="' + arc(PL[0], PL[1], RE, 45, 105) + '" stroke="#111" stroke-width="1" fill="none"/>';
+  for (let t = -10; t <= 50; t += 2) {
+    const an = angT(t), dec = t % 10 === 0;
+    const [x1, y1] = pol(PR[0], PR[1], RE, an), [x2, y2] = pol(PR[0], PR[1], RE + (dec ? 7 : 4), an);
+    g += L(x1, y1, x2, y2, dec ? 1.3 : .6);
+    if (dec) { const [tx, ty] = pol(PR[0], PR[1], RE + 15, an); g += '<text x="' + tx.toFixed(1) + '" y="' + (ty + 3.2).toFixed(1) + '" font-size="9" font-weight="700" ' + serif + ' text-anchor="middle" fill="#111">' + t + "</text>"; }
+  }
+  for (let h = 0; h <= 100; h += 5) {
+    const an = angH(h), dec = h % 20 === 0;
+    const [x1, y1] = pol(PL[0], PL[1], RE, an), [x2, y2] = pol(PL[0], PL[1], RE + (dec ? 7 : 4), an);
+    g += L(x1, y1, x2, y2, dec ? 1.3 : .6);
+    if (dec) { const [tx, ty] = pol(PL[0], PL[1], RE + 15, an); g += '<text x="' + tx.toFixed(1) + '" y="' + (ty + 3.2).toFixed(1) + '" font-size="9" font-weight="700" ' + serif + ' text-anchor="middle" fill="#111">' + h + "</text>"; }
+  }
+  g += '<text x="142" y="343" font-size="10" font-style="italic" ' + serif + ' text-anchor="middle" fill="#333">°C</text>';
+  g += '<text x="258" y="343" font-size="10" font-style="italic" ' + serif + ' text-anchor="middle" fill="#333">%</text>';
+  const mano = (pv, id, a0) => '<g id="' + id + '" style="transform-box:view-box;transform-origin:' + pv[0] + "px " + pv[1] + "px;transform:rotate(" + a0 +
+    'deg);transition:transform 1.4s cubic-bezier(.3,1.2,.5,1)"><polygon points="' + pv[0] + "," + (pv[1] - RE - 3) + " " + (pv[0] + 1.3) + "," + pv[1] + " " + (pv[0] + 1) + "," + (pv[1] + 14) +
+    " " + (pv[0] - 1) + "," + (pv[1] + 14) + " " + (pv[0] - 1.3) + "," + pv[1] + '" fill="#111"/></g><circle cx="' + pv[0] + '" cy="' + pv[1] + '" r="5.5" fill="#111"/>';
+  g += mano(PR, "naT", -105) + mano(PL, "naH", 105);
+  NA.angT = angT; NA.angH = angH;
+  // agujas del barómetro: dorada = hace 3 h, negra = ahora
+  const eje = "transform-box:view-box;transform-origin:200px 200px;";
+  g += '<g id="naRef" opacity="0" style="' + eje + 'transform:rotate(0deg);transition:transform 1.2s ease">' +
+       '<polygon points="200,78 201.3,200 198.7,200" fill="#c9a227"/><polygon points="200,66 206,84 200,79 194,84" fill="#c9a227"/></g>';
+  g += '<g id="naQ" style="' + eje + 'transform:rotate(-' + NA.sweep + 'deg);transition:transform 1.4s cubic-bezier(.3,1.4,.5,1)">' +
+       '<polygon points="200,56 205,70 201,68 201.4,200 201,226 199,226 198.6,200 199,68 195,70" fill="#111"/></g>';
+  g += '<circle cx="200" cy="200" r="7" fill="url(#naOro)" stroke="#6b4c0c"/><circle cx="200" cy="200" r="2" fill="#6b4c0c"/>';
+  g += '<path d="M70 170 A135 135 0 0 1 290 92 A158 158 0 0 0 70 170 Z" fill="url(#naVid)"/>';
+  g += "</svg>";
+  $("nautico").innerHTML = g;
+  NA.angQ = angQ; NA.ang270 = ang270;
+}
+function fijarNautico(T, Q, q3h, H) {
+  if (!NA.angQ) return;
+  if (!isNaN(Q)) $("naQ").style.transform = "rotate(" + NA.angQ(Q).toFixed(1) + "deg)";
+  if (!isNaN(T)) $("naT").style.transform = "rotate(" + NA.angT(T).toFixed(1) + "deg)";
+  if (H !== undefined && !isNaN(H)) $("naH").style.transform = "rotate(" + NA.angH(H).toFixed(1) + "deg)";
+  const ref = $("naRef"), hay = !(q3h === undefined || isNaN(q3h));
+  ref.setAttribute("opacity", hay ? "1" : "0");
+  if (hay) ref.style.transform = "rotate(" + NA.angQ(q3h).toFixed(1) + "deg)";
+  $("nauTxt").textContent = (isNaN(T) ? "--" : T.toFixed(1)) + " °C · " + (H === undefined || isNaN(H) ? "--" : H.toFixed(0)) + " % · QNH " + (isNaN(Q) ? "--" : Q.toFixed(1)) + " hPa";
+  $("nauRef").textContent = hay ? "Aguja dorada = hace 3 h (" + q3h.toFixed(1) + " hPa)" : "";
+}
+
+// ===== Pestaña "Más datos": valores calculados con temperatura, humedad y presión =====
+function indiceCalor(T, H) {            // fórmula de NOAA (Rothfusz); debajo de 26,7 °C o 40 % no aplica
+  if (T < 26.7 || H < 40) return T;
+  const F = T * 9 / 5 + 32;
+  const hi = -42.379 + 2.04901523 * F + 10.14333127 * H - 0.22475541 * F * H - 0.00683783 * F * F - 0.05481717 * H * H +
+             0.00122874 * F * F * H + 0.00085282 * F * H * H - 0.00000199 * F * F * H * H;
+  return (hi - 32) * 5 / 9;
+}
+function humedadAbsoluta(T, H) {        // g de agua por m³ de aire
+  return 216.7 * (H / 100 * 6.112 * Math.exp(17.62 * T / (243.12 + T))) / (273.15 + T);
+}
+function confort(T, R) {
+  if (T < 10) return ["🥶 Frío", "Abrigarse."];
+  if (R < 8) return ["🌵 Aire seco", T >= 28 ? "Calor seco: hidratarse." : "Agradable, algo seco."];
+  if (R < 14) return ["😊 Agradable", "Aire cómodo."];
+  if (R < 17) return ["🙂 Algo húmedo", "Todavía cómodo para la mayoría."];
+  if (R < 20) return ["😓 Pegajoso", "Se siente la humedad."];
+  if (R < 23) return ["🥵 Sofocante", "Cuesta refrescarse: evitar esfuerzos."];
+  return ["🚨 Opresivo", "Humedad extrema: riesgo de golpe de calor."];
+}
+// Pronóstico de Zambretti: solo con la presión a nivel del mar y su tendencia
+const ZAMB = ["", "Buen tiempo estable", "Buen tiempo", "Bueno, tendiendo a desmejorar", "Bastante bueno, chaparrones más tarde",
+  "Chaparrones, cada vez más inestable", "Inestable, lluvia más tarde", "Lluvia por momentos, empeorando", "Lluvia por momentos, muy inestable",
+  "Muy inestable, lluvia", "Buen tiempo estable", "Buen tiempo", "Bueno, posibles chaparrones", "Bastante bueno, chaparrones probables",
+  "Chaparrones con ratos de sol", "Variable, algo de lluvia", "Inestable, lluvia por momentos", "Lluvia frecuente", "Muy inestable, lluvia",
+  "Tormentoso, mucha lluvia", "Buen tiempo estable", "Buen tiempo", "Mejorando a bueno", "Bastante bueno, mejorando",
+  "Bastante bueno, posibles chaparrones al principio", "Chaparrones al principio, mejorando", "Variable, mejorando",
+  "Algo inestable, despejando más tarde", "Inestable, probablemente mejorando", "Inestable, con ratos buenos", "Muy inestable, con mejoras por momentos",
+  "Tormentoso, posiblemente mejorando", "Tormentoso, mucha lluvia"];
+function zambretti(q, d3) {
+  const mes = new Date().getMonth(), verano = mes === 11 || mes <= 1, invierno = mes >= 5 && mes <= 7;   // hemisferio sur
+  let z, tend;
+  if (d3 <= -1.6) { z = Math.round(127 - 0.12 * q) - (invierno ? 1 : 0); z = Math.min(Math.max(z, 1), 9); tend = "bajando"; }
+  else if (d3 >= 1.6) { z = Math.round(185 - 0.16 * q) + (verano ? 1 : 0); z = Math.min(Math.max(z, 20), 32); tend = "subiendo"; }
+  else { z = Math.min(Math.max(Math.round(144 - 0.13 * q), 10), 18); tend = "estable"; }
+  return [ZAMB[z], tend];
+}
+function dibujarMasDatos(l, q3h) {
+  if (!l || isNaN(l.T)) return;
+  const hayH = !isNaN(l.H), hayR = !isNaN(l.R), n1 = v => v.toFixed(1);
+  const tarj = (tit, val, uni, nota, ancho) => '<div class="card' + (ancho ? " ancho" : "") + '"><div class="lbl">' + tit + '</div><div class="v">' + val +
+    (uni ? "<small>" + uni + "</small>" : "") + "</div>" + (nota ? '<div class="n">' + nota + "</div>" : "") + "</div>";
+  let h = '<div class="md">';
+  // Zambretti
+  if (!isNaN(l.Q)) {
+    const hay3 = !(q3h === undefined || isNaN(q3h)), [txt, tend] = zambretti(l.Q, hay3 ? l.Q - q3h : 0);
+    h += tarj("🔮 Pronóstico por presión (Zambretti)", '<span style="font-size:19px">' + txt + "</span>", "",
+      hay3 ? "Presión " + tend + " (" + (l.Q - q3h >= 0 ? "+" : "") + n1(l.Q - q3h) + " hPa en 3 h). Método clásico, orientativo: no reemplaza al pronóstico de la IA."
+           : "Todavía no hay 3 h de lecturas: se toma la presión como estable. Orientativo.", true);
+  }
+  if (hayH) {
+    const st = indiceCalor(l.T, l.H);
+    h += tarj("🌡️ Sensación térmica", n1(st), "°C", st - l.T >= 0.5 ? "Se siente " + n1(st - l.T) + " °C más por la humedad." : "Igual a la temperatura (la humedad no suma calor).");
+    h += tarj("💧 Humedad absoluta", n1(humedadAbsoluta(l.T, l.H)), "g/m³", "Agua que hay en cada metro cúbico de aire.");
+  }
+  if (hayR) {
+    const [c, nota] = confort(l.T, l.R);
+    h += tarj("Confort", '<span style="font-size:19px">' + c + "</span>", "", nota + " (rocío " + n1(l.R) + " °C)");
+    const base = 125 * Math.max(l.T - l.R, 0), alt = isNaN(altEstacion) ? NaN : altEstacion;
+    h += tarj("☁️ Base de nubes", Math.round(base / 10) * 10, "m", "Sobre el suelo, si se forman cúmulos" + (isNaN(alt) ? "." : " (" + Math.round((base + alt) / 10) * 10 + " m sobre el mar)."));
+  }
+  // máximas y mínimas de hoy con las lecturas que recibió la app
+  const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+  const hoy = historial.filter(x => x.t >= d0.getTime());
+  if (hoy.length >= 2) {
+    const hh = t => new Date(t).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false });
+    const fila = (nom, k, uni, dec) => {
+      const v = hoy.filter(x => !isNaN(x[k]));
+      if (!v.length) return "";
+      const mx = v.reduce((a, b) => b[k] > a[k] ? b : a), mn = v.reduce((a, b) => b[k] < a[k] ? b : a);
+      return "<tr><td>" + nom + "</td><td>▲ <b>" + mx[k].toFixed(dec) + "</b> " + uni + ' <span class="h">' + hh(mx.t) + "</span></td><td>▼ <b>" +
+             mn[k].toFixed(dec) + "</b> " + uni + ' <span class="h">' + hh(mn.t) + "</span></td></tr>";
+    };
+    const tm = hoy.filter(x => !isNaN(x.T)).map(x => x.T);
+    h += '<div class="card ancho"><div class="lbl">📈 Máximas y mínimas de hoy</div><table>' + fila("Temperatura", "T", "°C", 1) + fila("Humedad", "H", "%", 0) +
+         fila("QNH", "Q", "hPa", 1) + fila("Rocío", "R", "°C", 1) + '</table><div class="n">Amplitud térmica: ' + n1(Math.max(...tm) - Math.min(...tm)) +
+         " °C · desde las " + hh(hoy[0].t) + " (" + hoy.length + " lecturas recibidas por la app)</div></div>";
+  } else h += '<div class="card ancho"><div class="lbl">📈 Máximas y mínimas de hoy</div><div class="n">Aparecen cuando la app junte lecturas de hoy.</div></div>';
+  $("masDatos").innerHTML = h + "</div>";
+}
+
+// ===== Sol y Luna: posición, salida, puesta y fase (fórmulas astronómicas estándar, sin internet) =====
+const AS = (() => {
+  const rad = Math.PI / 180, dia = 86400000, J1970 = 2440588, J2000 = 2451545, e = rad * 23.4397;
+  const aDias = ms => ms / dia - 0.5 + J1970 - J2000, deJul = j => (j + 0.5 - J1970) * dia;
+  const ar = (l, b) => Math.atan2(Math.sin(l) * Math.cos(e) - Math.tan(b) * Math.sin(e), Math.cos(l));
+  const dec = (l, b) => Math.asin(Math.sin(b) * Math.cos(e) + Math.cos(b) * Math.sin(e) * Math.sin(l));
+  const acimut = (H, phi, d) => Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(phi) - Math.tan(d) * Math.cos(phi));
+  const altura = (H, phi, d) => Math.asin(Math.sin(phi) * Math.sin(d) + Math.cos(phi) * Math.cos(d) * Math.cos(H));
+  const sidereo = (d, lw) => rad * (280.16 + 360.9856235 * d) - lw;
+  const anomSol = d => rad * (357.5291 + 0.98560028 * d);
+  const lonEcl = M => M + rad * (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) + 0.0003 * Math.sin(3 * M)) + rad * 102.9372 + Math.PI;
+  const solC = d => { const L = lonEcl(anomSol(d)); return { dec: dec(L, 0), ra: ar(L, 0) }; };
+  const lunaC = d => { const L = rad * (218.316 + 13.176396 * d), M = rad * (134.963 + 13.064993 * d), F = rad * (93.272 + 13.22935 * d),
+    l = L + rad * 6.289 * Math.sin(M), b = rad * 5.128 * Math.sin(F); return { ra: ar(l, b), dec: dec(l, b), dist: 385001 - 20905 * Math.cos(M) }; };
+  const rumbo = az => ((az / rad + 180) % 360 + 360) % 360;       // grados desde el norte, hacia el este
+  function sol(ms, lat, lon) { const lw = rad * -lon, phi = rad * lat, d = aDias(ms), c = solC(d), H = sidereo(d, lw) - c.ra;
+    return { alt: altura(H, phi, c.dec) / rad, az: rumbo(acimut(H, phi, c.dec)) }; }
+  function luna(ms, lat, lon) { const lw = rad * -lon, phi = rad * lat, d = aDias(ms), c = lunaC(d), H = sidereo(d, lw) - c.ra;
+    let h = altura(H, phi, c.dec); if (h < 0) h = Math.max(h, -1.5); h += 0.0002967 / Math.tan(h + 0.00312536 / (h + 0.08901179));
+    return { alt: altura(H, phi, c.dec) / rad, altRef: h / rad, az: rumbo(acimut(H, phi, c.dec)) }; }
+  function solHoras(ms, lat, lon) {     // salida, mediodía solar y puesta del día de "ms"
+    const lw = rad * -lon, phi = rad * lat, d = aDias(ms), n = Math.round(d - 0.0009 - lw / (2 * Math.PI));
+    const ds = 0.0009 + lw / (2 * Math.PI) + n, M = anomSol(ds), L = lonEcl(M), de = dec(L, 0);
+    const trans = x => J2000 + x + 0.0053 * Math.sin(M) - 0.0069 * Math.sin(2 * L), Jm = trans(ds);
+    const cw = (Math.sin(-0.833 * rad) - Math.sin(phi) * Math.sin(de)) / (Math.cos(phi) * Math.cos(de));
+    if (cw > 1 || cw < -1) return { medio: deJul(Jm), sale: NaN, pone: NaN };
+    const Jp = trans(0.0009 + (Math.acos(cw) + lw) / (2 * Math.PI) + n);
+    return { medio: deJul(Jm), sale: deJul(Jm - (Jp - Jm)), pone: deJul(Jp) };
+  }
+  function fase(ms) { const d = aDias(ms), s = solC(d), m = lunaC(d), sd = 149598000;
+    const phi = Math.acos(Math.sin(s.dec) * Math.sin(m.dec) + Math.cos(s.dec) * Math.cos(m.dec) * Math.cos(s.ra - m.ra));
+    const inc = Math.atan2(sd * Math.sin(phi), m.dist - sd * Math.cos(phi));
+    const ang = Math.atan2(Math.cos(s.dec) * Math.sin(s.ra - m.ra), Math.sin(s.dec) * Math.cos(m.dec) - Math.cos(s.dec) * Math.sin(m.dec) * Math.cos(s.ra - m.ra));
+    return { fraccion: (1 + Math.cos(inc)) / 2, fase: 0.5 + 0.5 * inc * (ang < 0 ? -1 : 1) / Math.PI }; }
+  return { sol, luna, solHoras, fase };
+})();
+
+function nombreFase(p) {
+  return p < 0.03 || p > 0.97 ? "Luna nueva" : p < 0.22 ? "Creciente" : p < 0.28 ? "Cuarto creciente" : p < 0.47 ? "Gibosa creciente" :
+         p < 0.53 ? "Luna llena" : p < 0.72 ? "Gibosa menguante" : p < 0.78 ? "Cuarto menguante" : "Menguante";
+}
+// Dibujo de la Luna con su parte iluminada (en el hemisferio sur la creciente se ilumina del lado izquierdo)
+function lunaSVG(p, R, cx, cy, sur) {
+  const c = Math.cos(2 * Math.PI * p), rx = Math.abs(c) * R, creciente = p < 0.5, gibosa = c < 0;
+  let espejo = creciente ? 1 : -1; if (sur) espejo = -espejo;
+  return '<g transform="translate(' + cx + " " + cy + ") scale(" + espejo + ',1)"><circle r="' + R + '" fill="#2b2f36" stroke="#7d8590" stroke-width=".8"/>' +
+    '<path d="M0 ' + (-R) + " A" + R + " " + R + " 0 0 1 0 " + R + " A" + rx.toFixed(2) + " " + R + " 0 0 " + (gibosa ? 1 : 0) + " 0 " + (-R) + ' Z" fill="#f3efd9"/></g>';
+}
+const RUMBOS = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"];
+function dibujarAstro() {
+  const cont = $("astro");
+  if (!cont || !$("tab-mas") || $("tab-mas").classList.contains("oculto")) return;
+  const lat = ubic && !isNaN(ubic.lat) ? ubic.lat : -31.4271, lon = ubic && !isNaN(ubic.lon) ? ubic.lon : -64.2183;
+  const ahora = Date.now(), d0 = new Date(); d0.setHours(0, 0, 0, 0);
+  const t0 = d0.getTime(), PASO = 10 * 60000, N = 144;
+  const hh = t => isNaN(t) ? "--:--" : new Date(t).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const W = 600, H = 210, pl = 8, pr = 8, pt = 14, pb = 26, yMax = 90, yMin = -60;
+  const X = t => pl + (W - pl - pr) * (t - t0) / (N * PASO), Y = a => pt + (H - pt - pb) * (yMax - Math.max(Math.min(a, yMax), yMin)) / (yMax - yMin);
+  const grafico = (fn, color, marcador) => {
+    let d = "", area = "";
+    for (let i = 0; i <= N; i++) { const t = t0 + i * PASO, a = fn(t); d += (i ? "L" : "M") + X(t).toFixed(1) + " " + Y(a).toFixed(1);
+      area += (i ? "L" : "M") + X(t).toFixed(1) + " " + Y(Math.max(a, 0)).toFixed(1); }
+    area += "L" + X(t0 + N * PASO) + " " + Y(0) + "L" + X(t0) + " " + Y(0) + "Z";
+    let g = '<svg viewBox="0 0 ' + W + " " + H + '"><rect x="' + pl + '" y="' + Y(0) + '" width="' + (W - pl - pr) + '" height="' + (H - pb - Y(0)) + '" fill="#000" opacity=".28"/>';
+    g += '<path d="' + area + '" fill="' + color + '" opacity=".18"/><path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2.2"/>';
+    g += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + Y(0) + '" y2="' + Y(0) + '" stroke="var(--sub)" stroke-width="1"/>';
+    g += '<text x="' + (W - pr - 2) + '" y="' + (Y(0) - 4) + '" font-size="11" fill="var(--sub)" text-anchor="end">horizonte</text>';
+    for (let h = 0; h <= 24; h += 3) { const x = X(t0 + h * 3600000);
+      g += '<line x1="' + x + '" x2="' + x + '" y1="' + (H - pb) + '" y2="' + (H - pb + 4) + '" stroke="var(--sub)"/>' +
+           '<text x="' + x + '" y="' + (H - 6) + '" font-size="11" fill="var(--sub)" text-anchor="' + (h === 0 ? "start" : h === 24 ? "end" : "middle") + '">' + h + " h</text>"; }
+    const xa = X(ahora), ya = Y(fn(ahora));
+    g += '<line x1="' + xa.toFixed(1) + '" x2="' + xa.toFixed(1) + '" y1="' + pt + '" y2="' + (H - pb) + '" stroke="var(--txt)" stroke-width=".8" stroke-dasharray="3 3" opacity=".6"/>';
+    return g + marcador(xa, ya) + "</svg>";
+  };
+  // ---- Sol ----
+  const sh = AS.solHoras(t0 + 12 * 3600000, lat, lon), sa = AS.sol(ahora, lat, lon), durMin = Math.round((sh.pone - sh.sale) / 60000);
+  const gSol = grafico(t => AS.sol(t, lat, lon).alt, "#f5b301", (x, y) => {
+    let r = ""; for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; r += '<line x1="' + (x + 12 * Math.cos(a)).toFixed(1) + '" y1="' + (y + 12 * Math.sin(a)).toFixed(1) +
+      '" x2="' + (x + 17 * Math.cos(a)).toFixed(1) + '" y2="' + (y + 17 * Math.sin(a)).toFixed(1) + '" stroke="#f5b301" stroke-width="2" stroke-linecap="round"/>'; }
+    return r + '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="9" fill="#ffd23f" stroke="#b97f00"/>'; });
+  let h = '<div class="card ancho astro"><div class="lbl">☀️ Sol · ' + (ubic && ubic.nombre ? esc(ubic.nombre) : "") + "</div>" + gSol +
+    '<div class="fila"><span>🌅 Sale <b>' + hh(sh.sale) + '</b></span><span>Mediodía solar <b>' + hh(sh.medio) + '</b></span><span>🌇 Se pone <b>' + hh(sh.pone) + "</b></span></div>" +
+    '<div class="n">' + (isNaN(durMin) ? "" : "Duración del día: " + Math.floor(durMin / 60) + " h " + (durMin % 60) + " min · ") +
+    (sa.alt > -0.833 ? "Ahora a " + sa.alt.toFixed(0) + "° de altura, hacia el " + RUMBOS[Math.round(sa.az / 45) % 8] + " (" + sa.az.toFixed(0) + "°)" : "Ahora bajo el horizonte") + "</div></div>";
+  // ---- Luna ----
+  const fl = AS.fase(ahora), la = AS.luna(ahora, lat, lon), sur = lat < 0;
+  let sale = NaN, pone = NaN, ant = AS.luna(t0, lat, lon).altRef - 0.133;
+  for (let i = 1; i <= N; i++) { const t = t0 + i * PASO, a = AS.luna(t, lat, lon).altRef - 0.133;
+    if (ant < 0 && a >= 0 && isNaN(sale)) sale = t - PASO * a / (a - ant);
+    if (ant >= 0 && a < 0 && isNaN(pone)) pone = t - PASO * a / (a - ant);
+    ant = a; }
+  const gLuna = grafico(t => AS.luna(t, lat, lon).alt, "#aab4c3", (x, y) => lunaSVG(fl.fase, 11, x.toFixed(1), y.toFixed(1), sur));
+  h += '<div class="card ancho astro"><div class="lbl">🌙 Luna</div>' + gLuna +
+    '<div style="display:flex;align-items:center;gap:14px;margin-top:8px"><svg viewBox="0 0 70 70" style="width:70px;height:70px;flex:none;aspect-ratio:1">' + lunaSVG(fl.fase, 31, 35, 35, sur) + "</svg>" +
+    '<div><div class="v" style="font-size:20px">' + nombreFase(fl.fase) + '</div><div class="n" style="font-size:14px">Iluminada: <b>' + Math.round(fl.fraccion * 100) + " %</b></div></div></div>" +
+    '<div class="fila"><span>Sale <b>' + hh(sale) + '</b></span><span>Se pone <b>' + hh(pone) + "</b></span></div>" +
+    '<div class="n">' + (la.altRef > 0 ? "Ahora a " + la.altRef.toFixed(0) + "° de altura, hacia el " + RUMBOS[Math.round(la.az / 45) % 8] + " (" + la.az.toFixed(0) + "°)" : "Ahora bajo el horizonte") +
+    (isNaN(sale) || isNaN(pone) ? " · “--:--” = hoy no sale o no se pone dentro del día" : "") + "</div></div>";
+  cont.innerHTML = h;
+}
+setInterval(dibujarAstro, 60000);
 
 // ===== Estilo de los instrumentos: "vintage" (1950) o "moderno" =====
 let estiloInst = leer("bme_estilo", "vintage");
@@ -617,6 +1038,9 @@ function mostrarLectura(l) {
   fijarInstrumento("gR", l.R);
   fijarInstrumento("gP", l.P);
   fijarInstrumento("gQ", l.Q, q3h);
+  fijarBanjo(l.T, l.Q, q3h, l.H);
+  fijarNautico(l.T, l.Q, q3h, l.H);
+  dibujarMasDatos(l, q3h);
   $("hora").textContent = "Última lectura: " + (l.hora || new Date(l.t).toLocaleString("es-AR"));
   $("extQ").textContent = (isNaN(l.alt) ? "" : "QNH calculado para " + l.alt.toFixed(0) + " m de altura") +
     (isNaN(q3h) ? "" : " · aguja " + (estiloInst === "vintage" ? "de bronce" : "amarilla") + " = hace 3 h (" + q3h.toFixed(1) + " hPa)");
@@ -845,6 +1269,15 @@ function calcularAlarmasMovil(l) {
   const buscar = (min, tolAntes, tolDespues) =>
     historial.filter(x => x.t <= l.t - min * 60e3 + tolDespues * 60e3 && x.t >= l.t - min * 60e3 - tolAntes * 60e3).pop();
   const h3 = buscar(180, 20, 10), h1 = buscar(60, 10, 5), m30 = buscar(30, 10, 5);
+  // Baja muy rápida: más de 3 hPa en 5 o en 15 minutos (presión de estación, no depende de la altura cargada)
+  // Se compara contra la presión más alta de los últimos 5 y 15 minutos (así una baja pareja, de 1 hPa cada 5 min, también cuenta)
+  const maxP = min => { const v = historial.filter(x => x.t >= l.t - (min + 0.6) * 60e3 && x.t <= l.t && !isNaN(x.P)).map(x => x.P); return v.length ? Math.max(...v) : NaN; };
+  const p5 = maxP(5), p15 = maxP(15);
+  const c5 = !isNaN(p5) && !isNaN(l.P) ? p5 - l.P : 0, c15 = !isNaN(p15) && !isNaN(l.P) ? p15 - l.P : 0;
+  const UMBRAL_RAPIDA = 2.895;   // avisa desde 2,9 hPa (las lecturas tienen un decimal)
+  if (c5 >= UMBRAL_RAPIDA || c15 >= UMBRAL_RAPIDA)
+    a.push({ k: "presRapida", min: c5 >= UMBRAL_RAPIDA ? 5 : 15, t: "🚨 Baja de presión muy rápida", d: "-" + (c5 >= UMBRAL_RAPIDA ? c5.toFixed(1) + " hPa en 5 min" : c15.toFixed(1) + " hPa en 15 min") +
+             ". Puede acercarse una tormenta fuerte o ráfagas: buscar resguardo." });
   if (h3 && !isNaN(l.Q) && l.Q - h3.Q <= -3)
     a.push({ k: "pres3", t: "📉 Caída brusca de presión", d: (l.Q - h3.Q).toFixed(1) + " hPa en 3 h. Posible desmejoramiento: atento a tormentas y viento." });
   else if (h1 && !isNaN(l.Q) && l.Q - h1.Q <= -2)
@@ -885,6 +1318,9 @@ function dibujarAlarmas() {
   if (e && (e.tipo === "oficial" || e.tipo === "local")) claves.add("est:" + e.texto.slice(0, 60));
   let nueva = false;
   for (const k of claves) if (!clavesAvisadas.has(k)) nueva = true;
+  const rapida = alarmasMovil.find(m => m.k === "presRapida");
+  if (rapida && !clavesAvisadas.has("presRapida"))
+    avisoHablado("Presión baja rápidamente, más de 3 hectopascales en " + rapida.min + " minutos");
   clavesAvisadas = claves;
   if (nueva) {
     try { navigator.vibrate && navigator.vibrate([300, 150, 300]); } catch (err) {}
@@ -999,6 +1435,7 @@ function mostrarUbicacion(u) {
   if (!u) return;
   ubic = u;
   guardar("bme_ubic", u);
+  dibujarAstro();
   $("lugarBtn").textContent = u.modo === "casa" ? "Casa" : (u.nombre || "Móvil");
   $("lugarActual").textContent = (u.modo === "casa" ? "🏠 " : "🚐 ") + (u.nombre || "") + " (" + u.lat.toFixed(4) + ", " + u.lon.toFixed(4) + ")" +
                                  (u.modo === "casa" ? " · sensores de la casa" : " · sensor BME280 móvil");
@@ -1123,6 +1560,7 @@ function alEscribirCfg() {
     const c = { canal: $("cfgCanal").value.trim(), key: $("cfgKey").value.trim() };
     await guardarCfg(c);
     $("estadoCfg").textContent = c.canal ? "✅ Guardado en este teléfono" : "Falta el Channel ID";
+    recargarTSPronto();
   }, 500);
 }
 $("cfgCanal").addEventListener("input", alEscribirCfg);
@@ -1132,18 +1570,31 @@ $("btnGuardar").addEventListener("click", async () => {
   const c = { canal: $("cfgCanal").value.trim(), key: $("cfgKey").value.trim() };
   await guardarCfg(c);
   $("estadoCfg").textContent = c.canal ? "✅ Guardado en este teléfono" : "Falta el Channel ID";
+  cargarThingSpeak();
 });
 
+// Tras cambiar el canal o la clave: borrar el resultado anterior y volver a cargar (espera a que se termine de escribir)
+let timerTS = null;
+function recargarTSPronto() {
+  clearTimeout(timerTS);
+  $("graficosTS").innerHTML = "";
+  $("estadoTS").textContent = "Configuración cambiada: recargando…";
+  timerTS = setTimeout(cargarThingSpeak, 1500);
+}
 async function cargarThingSpeak() {
-  const c = { canal: $("cfgCanal").value.trim() || cfg.canal, key: $("cfgKey").value.trim() || cfg.key };
+  const c = { canal: ($("cfgCanal").value.trim() || cfg.canal).replace(/\D/g, ""), key: $("cfgKey").value.trim() || cfg.key };
+  if (!c.canal && ($("cfgCanal").value.trim() || cfg.canal)) { $("estadoTS").textContent = "El Channel ID tiene que ser un número (está en ThingSpeak, arriba del nombre del canal)."; return; }
   if (!c.canal) { $("estadoTS").textContent = "Falta el Channel ID (pestaña ⚙️)."; return; }
-  $("estadoTS").textContent = "Cargando…";
+  $("estadoTS").textContent = "Cargando el canal " + c.canal + "…";
   let url = "https://api.thingspeak.com/channels/" + encodeURIComponent(c.canal) + "/feeds.json?results=100";
   if (c.key) url += "&api_key=" + encodeURIComponent(c.key);
   try {
     const r = await fetch(url);
-    if (!r.ok) throw new Error("HTTP " + r.status + (r.status === 400 ? " (¿canal privado sin Read Key?)" : ""));
+    if (!r.ok) throw new Error(
+      r.status === 404 ? "ThingSpeak no encuentra el canal " + c.canal + ". Revisá en ⚙️ que el Channel ID sea el número del canal (no una API Key) y, si el canal es privado, que la clave sea la Read API Key." :
+      r.status === 400 || r.status === 401 ? "el canal es privado y falta la Read API Key, o es incorrecta (⚙️)." : "HTTP " + r.status);
     const j = await r.json();
+    if (j === -1 || !j || !j.channel) throw new Error("ThingSpeak no da acceso al canal " + c.canal + ": es privado y la Read API Key falta o es incorrecta (⚙️).");
     const datos = (j.feeds || []).map(x => ({
       t: Date.parse(x.created_at),
       P: parseFloat(x.field1), Q: parseFloat(x.field2), T: parseFloat(x.field3),
@@ -1177,6 +1628,52 @@ function aplicarEstilo(e) {
 }
 $("estVintage").addEventListener("click", () => aplicarEstilo("vintage"));
 $("estModerno").addEventListener("click", () => aplicarEstilo("moderno"));
+
+// ===== Aviso sonoro y hablado de la alarma de presión =====
+// Tres tonos fuertes y después la frase hablada, dos veces, al volumen máximo que permite la app.
+let ctxAudio = null;
+function desbloquearAudio() {           // el navegador exige un toque antes de dejar sonar
+  try {
+    if (!ctxAudio) ctxAudio = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctxAudio.state === "suspended") ctxAudio.resume();
+    if (window.speechSynthesis) speechSynthesis.getVoices();
+  } catch (e) {}
+}
+document.addEventListener("pointerdown", desbloquearAudio);
+function tonosAlarma() {
+  try {
+    desbloquearAudio();
+    if (!ctxAudio) return 0;
+    const t0 = ctxAudio.currentTime + 0.05;
+    for (let i = 0; i < 3; i++) {
+      const o = ctxAudio.createOscillator(), g = ctxAudio.createGain();
+      o.type = "square"; o.frequency.value = i % 2 ? 1320 : 990;
+      g.gain.setValueAtTime(0.0001, t0 + i * 0.45); g.gain.exponentialRampToValueAtTime(1, t0 + i * 0.45 + 0.02);
+      g.gain.setValueAtTime(1, t0 + i * 0.45 + 0.3); g.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.45 + 0.36);
+      o.connect(g).connect(ctxAudio.destination); o.start(t0 + i * 0.45); o.stop(t0 + i * 0.45 + 0.4);
+    }
+    return 1500;
+  } catch (e) { return 0; }
+}
+function avisoHablado(frase) {
+  const espera = tonosAlarma();
+  try { navigator.vibrate && navigator.vibrate([500, 200, 500, 200, 500]); } catch (e) {}
+  setTimeout(() => {
+    try {
+      if (!window.speechSynthesis) return;
+      speechSynthesis.cancel();
+      const voces = speechSynthesis.getVoices(), voz = voces.find(v => /^es[-_]AR/i.test(v.lang)) || voces.find(v => /^es/i.test(v.lang));
+      for (let i = 0; i < 2; i++) {
+        const u = new SpeechSynthesisUtterance(frase);
+        u.lang = voz ? voz.lang : "es-AR"; if (voz) u.voice = voz;
+        u.volume = 1; u.rate = 0.95; u.pitch = 1;
+        speechSynthesis.speak(u);
+      }
+    } catch (e) {}
+  }, espera);
+}
+$("btnProbarVoz").addEventListener("click", () => avisoHablado("Presión baja rápidamente, más de 3 hectopascales en 5 minutos"));
+$("btnProbarVoz15").addEventListener("click", () => avisoHablado("Presión baja rápidamente, más de 3 hectopascales en 15 minutos"));
 
 // ===== Segundo plano: mantener la app despierta + notificaciones =====
 // Android suspende las páginas en segundo plano, salvo las que están reproduciendo sonido.
@@ -1259,6 +1756,8 @@ if (leer("bme_fondo", false)) {
 }
 
 // ===== Arranque =====
+crearBanjo();
+crearNautico();
 aplicarEstilo(estiloInst);
 mostrarPronostico(leer("bme_pron", null));
 mostrarUbicacion(ubic);
