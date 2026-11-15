@@ -55,6 +55,7 @@
   .inst.big svg{max-width:300px;margin:0 auto}
   .aguja{transform-box:view-box;transform-origin:100px 100px;transition:transform 1.2s cubic-bezier(.3,1.4,.5,1)}
   .fantasma{transform-box:view-box;transform-origin:100px 100px;transition:transform 1.2s ease}
+  .minq,.maxq{transform-box:view-box;transform-origin:100px 100px;transition:transform 1.2s ease}
   .esfera{fill:var(--card2);stroke:var(--line);stroke-width:2}
   .marca{stroke:var(--txt);stroke-linecap:round}
   .num{fill:var(--txt);font-size:12px;font-weight:600;text-anchor:middle;font-variant-numeric:tabular-nums}
@@ -242,7 +243,7 @@
         <button class="sec" data-ver="mas">📊 Más datos</button>
       </div>
     </div>
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>15/11/2026 · 11:20</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>15/11/2026 · 12:10</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -344,6 +345,28 @@ const leer = (k, def) => { try { const v = localStorage.getItem(k); return v ? J
 
 let historial = leer("bme_hist", []);           // lecturas en vivo: {t, T, H, R, P, Q}
 const MAX_HIST_MS = 24 * 3600 * 1000;
+let tsQ = [];   // QNH leído de ThingSpeak: {t, Q}, para completar el mínimo y el máximo
+// Mínimo y máximo del QNH en las últimas 24 h (historial en vivo + ThingSpeak + lectura actual)
+function extremosQ(l) {
+  const desde = l.t - MAX_HIST_MS, v = [];
+  for (const x of historial) if (x.t >= desde && x.t <= l.t + 60e3 && isFinite(x.Q)) v.push(x.Q);
+  for (const x of tsQ) if (x.t >= desde && x.t <= l.t + 60e3 && isFinite(x.Q)) v.push(x.Q);
+  if (isFinite(l.Q)) v.push(l.Q);
+  return v.length >= 2 ? { min: Math.min(...v), max: Math.max(...v) } : { min: NaN, max: NaN };
+}
+// Mueve solo las agujas de mínimo y máximo (sin repetir alarmas ni avisos)
+function pintarExtremos() {
+  if (!ultimaLectura) return;
+  const ex = extremosQ(ultimaLectura), pon = (el, v, ang, op) => {
+    if (!el) return;
+    if (isNaN(v)) el.setAttribute("opacity", "0"); else { el.setAttribute("opacity", op); el.style.transform = "rotate(" + ang(v).toFixed(1) + "deg)"; }
+  };
+  const k = instrumentos["gQ"];
+  if (k) { pon(k.minq, ex.min, k.ang, ".95"); pon(k.maxq, ex.max, k.ang, ".95"); }
+  if (BJ.ang) { pon($("bjMin"), ex.min, BJ.ang, "1"); pon($("bjMax"), ex.max, BJ.ang, "1"); }
+  if (NA.angQ) { pon($("naMin"), ex.min, NA.angQ, "1"); pon($("naMax"), ex.max, NA.angQ, "1"); }
+}
+const COL_MIN = "#2f6aa3", COL_MAX = "#b3402b";   // azul = mínimo, rojo = máximo
 
 // ===== Manifest para "Agregar a pantalla de inicio" =====
 (function () {
@@ -506,6 +529,9 @@ function crearBanjo() {
   const eje = "transform-box:view-box;transform-origin:150px 560px;";
   g += '<g id="bjRef" opacity="0" style="' + eje + 'transform:rotate(-135deg);transition:transform 1.2s ease" filter="url(#bjSomA)">' +
        '<polygon points="150,476 151.8,560 148.2,560" fill="#c8932f" stroke="#7a5416" stroke-width=".4"/><polygon points="150,470 154.5,484 145.5,484" fill="#c8932f" stroke="#7a5416" stroke-width=".4"/></g>';
+  for (const [id, col] of [["bjMin", COL_MIN], ["bjMax", COL_MAX]])
+    g += '<g id="' + id + '" opacity="0" style="' + eje + 'transform:rotate(-135deg);transition:transform 1.2s ease" filter="url(#bjSomA)">' +
+         '<polygon points="150,488 151.3,560 148.7,560" fill="' + col + '"/><polygon points="150,482 153.6,494 146.4,494" fill="' + col + '"/></g>';
   g += '<g id="bjAguja" style="' + eje + 'transform:rotate(-135deg);transition:transform 1.4s cubic-bezier(.3,1.4,.5,1)" filter="url(#bjSomA)">' +
        '<polygon points="150,474 151.6,556 150,560 148.4,556" fill="#0e0e0e"/><polygon points="148.6,560 151.4,560 152,586 148,586" fill="#0e0e0e"/>' +
        '<circle cx="150" cy="586" r="4.8" fill="#0e0e0e"/><circle cx="150" cy="586" r="1.6" fill="#8a6a2a"/></g>';
@@ -539,7 +565,7 @@ function crearBanjo() {
   $("banjo").innerHTML = g;
   BJ.ang = ang; BJ.yT = yT;
 }
-function fijarBanjo(T, Q, q3h, H) {
+function fijarBanjo(T, Q, q3h, H, qmin, qmax) {
   if (!BJ.ang) return;
   if (!isNaN(T)) {
     const tt = Math.min(Math.max(T, BJ.tMin - 2), BJ.tMax + 1);
@@ -550,8 +576,14 @@ function fijarBanjo(T, Q, q3h, H) {
   const ref = $("bjRef");
   if (q3h === undefined || isNaN(q3h)) ref.setAttribute("opacity", "0");
   else { ref.setAttribute("opacity", "1"); ref.style.transform = "rotate(" + BJ.ang(q3h).toFixed(1) + "deg)"; }
+  for (const [id, v] of [["bjMin", qmin], ["bjMax", qmax]]) {
+    const a = $(id);
+    if (v === undefined || isNaN(v)) a.setAttribute("opacity", "0");
+    else { a.setAttribute("opacity", "1"); a.style.transform = "rotate(" + BJ.ang(v).toFixed(1) + "deg)"; }
+  }
   $("banjoTxt").textContent = (isNaN(T) ? "--" : T.toFixed(1)) + " °C · " + (H === undefined || isNaN(H) ? "--" : H.toFixed(0)) + " % · QNH " + (isNaN(Q) ? "--" : Q.toFixed(1)) + " hPa";
-  $("banjoRef").textContent = isNaN(q3h) || q3h === undefined ? "" : "Aguja de bronce = hace 3 h (" + q3h.toFixed(1) + " hPa)";
+  $("banjoRef").textContent = (isNaN(q3h) || q3h === undefined ? "" : "Aguja de bronce = hace 3 h (" + q3h.toFixed(1) + " hPa)") +
+    (isNaN(qmin) || qmin === undefined ? "" : " · Azul = mínimo 24 h (" + qmin.toFixed(1) + ") · Roja = máximo 24 h (" + qmax.toFixed(1) + ")");
 }
 
 // ===== Pestaña "Náutico": instrumento de barco (barómetro arriba, termómetro e higrómetro abajo) =====
@@ -619,6 +651,9 @@ function crearNautico() {
   const eje = "transform-box:view-box;transform-origin:200px 200px;";
   g += '<g id="naRef" opacity="0" style="' + eje + 'transform:rotate(0deg);transition:transform 1.2s ease">' +
        '<polygon points="200,78 201.3,200 198.7,200" fill="#c9a227"/><polygon points="200,66 206,84 200,79 194,84" fill="#c9a227"/></g>';
+  for (const [id, col] of [["naMin", COL_MIN], ["naMax", COL_MAX]])
+    g += '<g id="' + id + '" opacity="0" style="' + eje + 'transform:rotate(0deg);transition:transform 1.2s ease">' +
+         '<polygon points="200,92 201.2,200 198.8,200" fill="' + col + '"/><polygon points="200,82 205,96 195,96" fill="' + col + '"/></g>';
   g += '<g id="naQ" style="' + eje + 'transform:rotate(-' + NA.sweep + 'deg);transition:transform 1.4s cubic-bezier(.3,1.4,.5,1)">' +
        '<polygon points="200,56 205,70 201,68 201.4,200 201,226 199,226 198.6,200 199,68 195,70" fill="#111"/></g>';
   g += '<circle cx="200" cy="200" r="7" fill="url(#naOro)" stroke="#6b4c0c"/><circle cx="200" cy="200" r="2" fill="#6b4c0c"/>';
@@ -627,7 +662,7 @@ function crearNautico() {
   $("nautico").innerHTML = g;
   NA.angQ = angQ; NA.ang270 = ang270;
 }
-function fijarNautico(T, Q, q3h, H) {
+function fijarNautico(T, Q, q3h, H, qmin, qmax) {
   if (!NA.angQ) return;
   if (!isNaN(Q)) $("naQ").style.transform = "rotate(" + NA.angQ(Q).toFixed(1) + "deg)";
   if (!isNaN(T)) $("naT").style.transform = "rotate(" + NA.angT(T).toFixed(1) + "deg)";
@@ -635,8 +670,14 @@ function fijarNautico(T, Q, q3h, H) {
   const ref = $("naRef"), hay = !(q3h === undefined || isNaN(q3h));
   ref.setAttribute("opacity", hay ? "1" : "0");
   if (hay) ref.style.transform = "rotate(" + NA.angQ(q3h).toFixed(1) + "deg)";
+  for (const [id, v] of [["naMin", qmin], ["naMax", qmax]]) {
+    const a = $(id);
+    if (v === undefined || isNaN(v)) a.setAttribute("opacity", "0");
+    else { a.setAttribute("opacity", "1"); a.style.transform = "rotate(" + NA.angQ(v).toFixed(1) + "deg)"; }
+  }
   $("nauTxt").textContent = (isNaN(T) ? "--" : T.toFixed(1)) + " °C · " + (H === undefined || isNaN(H) ? "--" : H.toFixed(0)) + " % · QNH " + (isNaN(Q) ? "--" : Q.toFixed(1)) + " hPa";
-  $("nauRef").textContent = hay ? "Aguja dorada = hace 3 h (" + q3h.toFixed(1) + " hPa)" : "";
+  $("nauRef").textContent = (hay ? "Aguja dorada = hace 3 h (" + q3h.toFixed(1) + " hPa)" : "") +
+    (isNaN(qmin) || qmin === undefined ? "" : " · Azul = mínimo 24 h (" + qmin.toFixed(1) + ") · Roja = máximo 24 h (" + qmax.toFixed(1) + ")");
 }
 
 // ===== Pestaña "Más datos": valores calculados con temperatura, humedad y presión =====
@@ -881,6 +922,11 @@ function crearVintage(id, c) {
   if (c.fantasma)
     g += '<g class="fantasma" style="transform:rotate(-135deg)" opacity="0">' +
          '<polygon points="100,18 101.6,100 98.4,100" fill="#a8761f"/><polygon points="100,14 103.5,24 96.5,24" fill="#a8761f"/></g>';
+  // agujas de mínimo (azul) y máximo (roja) de 24 h, solo en el barómetro
+  if (c.fantasma)
+    for (const [cl, col] of [["minq", COL_MIN], ["maxq", COL_MAX]])
+      g += '<g class="' + cl + '" style="transform:rotate(-135deg)" opacity="0">' +
+           '<polygon points="100,27 101.3,100 98.7,100" fill="' + col + '"/><polygon points="100,22 103.4,33 96.6,33" fill="' + col + '"/></g>';
   // aguja negra con contrapeso
   g += '<g class="aguja" style="transform:rotate(-135deg)">' +
        '<polygon points="100,19 101.4,96 100,100 98.6,96" fill="#120c07"/>' +
@@ -894,7 +940,7 @@ function crearVintage(id, c) {
   g += "</svg>";
   $(id).innerHTML = g;
   const svg = $(id).querySelector("svg");
-  instrumentos[id] = { c, ang, aguja: svg.querySelector(".aguja"), fantasma: svg.querySelector(".fantasma"), dig: svg.querySelector(".dig") };
+  instrumentos[id] = { c, ang, aguja: svg.querySelector(".aguja"), fantasma: svg.querySelector(".fantasma"), minq: svg.querySelector(".minq"), maxq: svg.querySelector(".maxq"), dig: svg.querySelector(".dig") };
 }
 
 function crearModerno(id, c) {
@@ -922,6 +968,9 @@ function crearModerno(id, c) {
   }
   if (c.fantasma)
     g += '<g class="fantasma" style="transform:rotate(-135deg)" opacity="0"><polygon points="100,22 103,100 97,100" fill="#eab308"/></g>';
+  if (c.fantasma)
+    for (const [cl, col] of [["minq", "#3b82f6"], ["maxq", "#a855f7"]])
+      g += '<g class="' + cl + '" style="transform:rotate(-135deg)" opacity="0"><polygon points="100,24 102.8,100 97.2,100" fill="' + col + '"/></g>';
   g += '<g class="aguja" style="transform:rotate(-135deg)">' +
        '<polygon points="100,16 104.5,100 100,112 95.5,100" fill="#ef4444"/></g>' +
        '<circle cx="100" cy="100" r="7" fill="var(--txt)"/><circle cx="100" cy="100" r="2.5" fill="var(--card2)"/>';
@@ -929,10 +978,10 @@ function crearModerno(id, c) {
   g += '<text class="tit" x="100" y="171">' + c.titulo + " (" + c.unidad + ")</text></svg>";
   $(id).innerHTML = g;
   const svg = $(id).querySelector("svg");
-  instrumentos[id] = { c, ang, aguja: svg.querySelector(".aguja"), fantasma: svg.querySelector(".fantasma"), dig: svg.querySelector(".dig") };
+  instrumentos[id] = { c, ang, aguja: svg.querySelector(".aguja"), fantasma: svg.querySelector(".fantasma"), minq: svg.querySelector(".minq"), maxq: svg.querySelector(".maxq"), dig: svg.querySelector(".dig") };
 }
 
-function fijarInstrumento(id, v, vFantasma) {
+function fijarInstrumento(id, v, vFantasma, vMin, vMax) {
   const k = instrumentos[id];
   if (!k) return;
   if (isNaN(v)) { k.dig.textContent = "--"; return; }
@@ -941,6 +990,11 @@ function fijarInstrumento(id, v, vFantasma) {
   if (k.fantasma) {
     if (vFantasma === undefined || isNaN(vFantasma)) k.fantasma.setAttribute("opacity", "0");
     else { k.fantasma.setAttribute("opacity", ".9"); k.fantasma.style.transform = "rotate(" + k.ang(vFantasma).toFixed(1) + "deg)"; }
+  }
+  for (const [el, x] of [[k.minq, vMin], [k.maxq, vMax]]) {
+    if (!el) continue;
+    if (x === undefined || isNaN(x)) el.setAttribute("opacity", "0");
+    else { el.setAttribute("opacity", ".95"); el.style.transform = "rotate(" + k.ang(x).toFixed(1) + "deg)"; }
   }
 }
 
@@ -1104,13 +1158,15 @@ function mostrarLectura(l) {
   fijarInstrumento("gH", l.H);
   fijarInstrumento("gR", l.R);
   fijarInstrumento("gP", l.P);
-  fijarInstrumento("gQ", l.Q, q3h);
-  fijarBanjo(l.T, l.Q, q3h, l.H);
-  fijarNautico(l.T, l.Q, q3h, l.H);
+  const ex = extremosQ(l);
+  fijarInstrumento("gQ", l.Q, q3h, ex.min, ex.max);
+  fijarBanjo(l.T, l.Q, q3h, l.H, ex.min, ex.max);
+  fijarNautico(l.T, l.Q, q3h, l.H, ex.min, ex.max);
   dibujarMasDatos(l, q3h);
   $("hora").textContent = "Última lectura: " + (l.hora || new Date(l.t).toLocaleString("es-AR"));
   $("extQ").textContent = (isNaN(l.alt) ? "" : "QNH calculado para " + l.alt.toFixed(0) + " m de altura") +
-    (isNaN(q3h) ? "" : " · aguja " + (estiloInst === "vintage" ? "de bronce" : "amarilla") + " = hace 3 h (" + q3h.toFixed(1) + " hPa)");
+    (isNaN(q3h) ? "" : " · aguja " + (estiloInst === "vintage" ? "de bronce" : "amarilla") + " = hace 3 h (" + q3h.toFixed(1) + " hPa)") +
+    (isNaN(ex.min) ? "" : " · " + (estiloInst === "vintage" ? "azul" : "azul") + " = mínimo 24 h (" + ex.min.toFixed(1) + ") · " + (estiloInst === "vintage" ? "roja" : "violeta") + " = máximo 24 h (" + ex.max.toFixed(1) + ")");
   $("extT").textContent = !isNaN(l.T) && !isNaN(l.R) ? "Diferencia con el rocío: " + (l.T - l.R).toFixed(1) + " °C" : "";
   // tendencia de presión en 3 h con el historial en vivo
   const hace3 = historial.filter(x => x.t <= l.t - 3 * 3600e3 + 10 * 60e3 && x.t >= l.t - 3 * 3600e3 - 20 * 60e3);
@@ -1839,6 +1895,8 @@ async function cargarThingSpeak() {
       H: parseFloat(x.field4), R: parseFloat(x.field5)
     })).filter(x => !isNaN(x.t));
     dibujarSerie($("graficosTS"), datos);
+    tsQ = datos.filter(x => isFinite(x.Q)).map(x => ({ t: x.t, Q: x.Q }));
+    pintarExtremos();
     const nombre = j.channel && j.channel.name ? j.channel.name + " · " : "";
     $("estadoTS").textContent = datos.length
       ? nombre + datos.length + " envíos (uno cada 15 min). Último: " + new Date(datos[datos.length - 1].t).toLocaleString("es-AR")
