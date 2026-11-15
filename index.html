@@ -104,6 +104,8 @@
   .log div{padding:3px 0;border-bottom:1px solid var(--line)}
   .log div:last-child{border:0}
   label{display:block;font-size:13px;color:var(--sub);margin:10px 2px 4px}
+  .chk{display:flex;gap:10px;align-items:center;margin:12px 0 2px;font-size:15px;color:var(--txt)}
+  .chk input{width:24px;height:24px;flex:none;padding:0;accent-color:#c9973a}
   input{width:100%;font:inherit;font-size:16px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--txt)}
   .aviso{background:var(--card);border-left:4px solid var(--warn);border-radius:10px;padding:10px 12px;font-size:14px;margin:8px 0}
   .oculto{display:none}
@@ -243,7 +245,7 @@
         <button class="sec" data-ver="mas">📊 Más datos</button>
       </div>
     </div>
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>15/11/2026 · 12:10</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>15/11/2026 · 13:30</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -300,6 +302,8 @@
       <button class="sec" id="btnGPS">🛰️ Usar el GPS del teléfono</button>
     </div>
     <div class="estado" id="gpsEstado"></div>
+    <label class="chk" for="autoGPS"><input type="checkbox" id="autoGPS"> <b>🛰️ Ubicación y altura automáticas</b></label>
+    <div class="estado" id="autoEstado">Sigue al teléfono con el GPS: cambia el lugar al alejarte 10 km o más y corrige la altura para el QNH. Hace falta el Bluetooth conectado.</div>
 
     <h3 style="margin:14px 0 2px;font-size:16px">⛰️ Altura para el QNH</h3>
     <div class="actual">Ahora: <b id="altActual">-- m</b></div>
@@ -1149,6 +1153,7 @@ function mostrarLectura(l) {
   actualizarServicio();
   alarmasMovil = calcularAlarmasMovil(l);
   setTimeout(dibujarAlarmas, 0);
+  if (autoGPS.on) setTimeout(evaluarAuto, 0);
   if (!isNaN(l.alt)) mostrarAltura(l.alt);
   if (!isNaN(l.P)) { ultimaP = l.P; if (!$("modalAlt").classList.contains("oculto")) actualizarCalc(); }
   if (!isNaN(l.P) && (l.P < rangoP[0] + 5 || l.P > rangoP[1] - 5)) crearRangoPresion(l.P);
@@ -1371,8 +1376,9 @@ function textoServicio() {
   return f(l.T, 1) + " °C · " + f(l.H, 0) + " % · QNH " + f(l.Q, 1) + " hPa · " + h;
 }
 function opcionesServicio() {
-  // serviceType 16 = "dispositivo conectado" (Bluetooth)
-  return { id: ID_SERVICIO, title: "Estación Móvil", body: textoServicio(), smallIcon: "ic_estacion", silent: true, notificationChannelId: "estacion", serviceType: 16 };
+  // serviceType 16 = "dispositivo conectado" (Bluetooth); +8 = "ubicación" cuando el seguimiento GPS está activo
+  const tipo = 16 | (autoGPS.on && permisoUbic ? 8 : 0);
+  return { id: ID_SERVICIO, title: "Estación Móvil", body: textoServicio(), smallIcon: "ic_estacion", silent: true, notificationChannelId: "estacion", serviceType: tipo };
 }
 async function iniciarServicio() {
   if (!NATIVO || servicioActivo) return;
@@ -1393,8 +1399,14 @@ function actualizarServicio() {
   if (!servicioActivo || !FS) return;
   FS.updateForegroundService(opcionesServicio()).catch(() => {});
 }
+async function reiniciarServicio() {          // para cambiar el tipo del servicio (con o sin ubicación)
+  if (!NATIVO) return;
+  if (servicioActivo && FS) { servicioActivo = false; try { await conLimite(FS.stopForegroundService(), 8000, "sin respuesta"); } catch (e) {} }
+  await iniciarServicio();
+}
 function detenerServicio() {
   if (!servicioActivo || !FS) return;
+  if (autoGPS.on && permisoUbic) { actualizarServicio(); return; }   // el seguimiento GPS necesita el servicio vivo
   servicioActivo = false;
   FS.stopForegroundService().catch(() => {});
   $("estadoFondo").textContent = "Segundo plano detenido (se activa al conectar).";
@@ -1730,7 +1742,7 @@ function mostrarUbicacion(u) {
   ubic = u;
   guardar("bme_ubic", u);
   dibujarAstro();
-  $("lugarBtn").textContent = u.modo === "casa" ? "Casa" : (u.nombre || "Móvil");
+  $("lugarBtn").textContent = (autoGPS.on ? "🛰️ " : "") + (u.modo === "casa" ? "Casa" : (u.nombre || "Móvil"));
   $("lugarActual").textContent = (u.modo === "casa" ? "🏠 " : "🚐 ") + (u.nombre || "") + " (" + u.lat.toFixed(4) + ", " + u.lon.toFixed(4) + ")" +
                                  (u.modo === "casa" ? " · sensores de la casa" : " · sensor BME280 móvil");
   dibujarAlarmas();
@@ -1790,6 +1802,174 @@ $("btnAltCasa").addEventListener("click", async () => {
 });
 $("qnhRef").addEventListener("input", actualizarCalc);
 $("btnUsarCalc").addEventListener("click", () => { $("altNueva").value = Math.round(altCalculada); guardarAltura(Math.round(altCalculada)); });
+
+// ===== Ubicación y altura automáticas con el GPS del teléfono =====
+// Lugar nuevo (pronóstico y alertas del SMN): solo al alejarte 10 km o más del lugar vigente y como mucho cada 30 min,
+// porque la placa pide un pronóstico nuevo cada vez. Altura (QNH): cada vez que cambia 3 m o más, como mucho cada minuto.
+// Altura = terreno (modelo digital de elevación) + 1,5 m del sensor; sin internet, GPS filtrado y ajustado con el desvío aprendido.
+const AUTO = { ubicKm: 10, ubicMinS: 1800, altMinM: 3, altMinS: 60, precMax: 150, sensorM: 1.5, terrenoKm: 0.2, terrenoMinS: 600 };
+let autoGPS = leer("bme_auto", { on: false });
+let permisoUbic = false, GEO = null, geoWatchId = null, geoWebId = null;
+let ultPos = null, muestrasAlt = [], enviandoAuto = false;
+let desvioGPS = leer("bme_desvio_gps", null);            // altura GPS (elipsoide) menos terreno, aprendido con internet
+let ultEnvio = { ubicT: 0, altT: 0 }, cacheTerreno = null, ultimoAuto = null, nombreCache = null;
+
+function distanciaKm(la1, lo1, la2, lo2) {
+  const r = Math.PI / 180, a = Math.sin((la2 - la1) * r / 2) ** 2 + Math.cos(la1 * r) * Math.cos(la2 * r) * Math.sin((lo2 - lo1) * r / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(a));
+}
+function mediana(v) { const o = v.slice().sort((a, b) => a - b), n = o.length; return n ? (n % 2 ? o[(n - 1) / 2] : (o[n / 2 - 1] + o[n / 2]) / 2) : NaN; }
+function autoMsg(t) { $("autoEstado").textContent = t; }
+function guardarAuto() { guardar("bme_auto", autoGPS); }
+
+function asegurarCapacitor() {
+  return new Promise((res, rej) => {
+    if (window.capacitorExports) return res();
+    const sc = document.createElement("script");
+    sc.src = "capacitor.js"; sc.onload = () => res(); sc.onerror = () => rej(new Error("falta capacitor.js en la app"));
+    document.head.appendChild(sc);
+  });
+}
+
+async function nombreLugarGPS(lat, lon) {
+  if (nombreCache && distanciaKm(nombreCache.lat, nombreCache.lon, lat, lon) < 5) return nombreCache.nombre;
+  let nombre = "GPS " + lat.toFixed(2) + " " + lon.toFixed(2);
+  try {
+    const r = await conLimite(fetch("https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=" + lat + "&longitude=" + lon + "&localityLanguage=es"), 7000, "sin respuesta");
+    const j = await r.json(), n = String(j.locality || j.city || j.principalSubdivision || "").replace(/\s+/g, " ").trim();
+    if (n) nombre = n.slice(0, 30);
+  } catch (e) {}
+  nombreCache = { lat, lon, nombre };
+  return nombre;
+}
+
+function altGPSFiltrada() { return muestrasAlt.length >= 3 ? mediana(muestrasAlt) : NaN; }
+
+// Devuelve { alt, fuente } con fuente "terreno", "gps_cal" o "gps"
+async function altitudPara(p) {
+  let h = NaN;
+  if (cacheTerreno && distanciaKm(cacheTerreno.lat, cacheTerreno.lon, p.lat, p.lon) < AUTO.terrenoKm && Date.now() - cacheTerreno.t < AUTO.terrenoMinS * 1000) h = cacheTerreno.h;
+  else {
+    try { h = await conLimite(alturaTerreno(p.lat, p.lon), 9000, "sin respuesta"); } catch (e) { h = NaN; }
+    if (!isNaN(h)) cacheTerreno = { lat: p.lat, lon: p.lon, h, t: Date.now() };
+  }
+  const g = altGPSFiltrada();
+  if (!isNaN(h)) {
+    const quieto = muestrasAlt.length >= 5 && Math.max(...muestrasAlt) - Math.min(...muestrasAlt) <= 15;   // solo aprende si el GPS está estable
+    if (!isNaN(g) && quieto && Math.abs(g - h) <= 60) { const d = g - h; desvioGPS = desvioGPS === null || isNaN(desvioGPS) ? d : desvioGPS * 0.8 + d * 0.2; guardar("bme_desvio_gps", desvioGPS); }
+    return { alt: h + AUTO.sensorM, fuente: "terreno" };
+  }
+  if (!isNaN(g)) return { alt: g - (desvioGPS === null || isNaN(desvioGPS) ? 0 : desvioGPS), fuente: desvioGPS === null || isNaN(desvioGPS) ? "gps" : "gps_cal" };
+  return null;
+}
+
+function pintarAuto() {
+  if (!autoGPS.on) return;
+  if (!ultPos) { autoMsg("🛰️ Buscando señal GPS…"); return; }
+  const u = ultimoAuto, hora = new Date(ultPos.t).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const fuente = !u ? "" : u.fuente === "terreno" ? "terreno + " + AUTO.sensorM + " m del sensor"
+    : u.fuente === "gps_cal" ? "GPS ajustado (sin internet)" : "GPS aproximado: puede variar ±20 m";
+  autoMsg("🛰️ Activa · GPS ±" + Math.round(ultPos.acc) + " m a las " + hora + (u ? " · altura enviada " + u.alt.toFixed(0) + " m (" + fuente + ")" : "") +
+          (rxChar ? "" : " · esperando el Bluetooth"));
+}
+
+function procesarPosicion(c, t) {
+  if (!c || isNaN(c.latitude) || isNaN(c.longitude)) return;
+  if (c.accuracy > AUTO.precMax) { autoMsg("🛰️ Señal GPS débil (±" + Math.round(c.accuracy) + " m), esperando mejor precisión…"); return; }
+  ultPos = { lat: c.latitude, lon: c.longitude, acc: c.accuracy, t: t || Date.now() };
+  if (c.altitude != null && !isNaN(c.altitude) && (c.altitudeAccuracy == null || c.altitudeAccuracy <= 40)) {
+    muestrasAlt.push(c.altitude);
+    if (muestrasAlt.length > 12) muestrasAlt.shift();
+  }
+  pintarAuto();
+  evaluarAuto();
+}
+
+async function evaluarAuto() {
+  if (!autoGPS.on || !ultPos || enviandoAuto || !rxChar) { pintarAuto(); return; }
+  enviandoAuto = true;
+  try {
+    const ahora = Date.now(), p = ultPos;
+    let cambioLugar = false;
+    if (distanciaKm(ubic.lat, ubic.lon, p.lat, p.lon) >= AUTO.ubicKm && ahora - ultEnvio.ubicT >= AUTO.ubicMinS * 1000) {
+      const nombre = await nombreLugarGPS(p.lat, p.lon);
+      if (await enviarComando("ubic " + p.lat.toFixed(5) + " " + p.lon.toFixed(5) + " " + nombre)) {
+        ultEnvio.ubicT = Date.now(); cambioLugar = true;
+        agregarLog("GPS: lugar nuevo " + nombre + " (" + p.lat.toFixed(4) + ", " + p.lon.toFixed(4) + ")");
+        await espera(700);
+      }
+    }
+    // la altura solo se toca en modo móvil (en "casa" la placa usa su altura fija)
+    if (cambioLugar || ubic.modo === "movil") {
+      const r = await altitudPara(p);
+      if (r && !isNaN(r.alt)) {
+        const dif = isNaN(altEstacion) ? 99 : Math.abs(r.alt - altEstacion);
+        if (cambioLugar || (dif >= AUTO.altMinM && ahora - ultEnvio.altT >= AUTO.altMinS * 1000)) {
+          if (await enviarComando("alt " + r.alt.toFixed(1))) {
+            ultEnvio.altT = Date.now(); ultimoAuto = r;
+            agregarLog("GPS: altura " + r.alt.toFixed(1) + " m (" + r.fuente + ")");
+          }
+        } else if (!ultimoAuto) ultimoAuto = r;
+      }
+    }
+  } catch (e) { agregarLog("GPS automático: " + (e && e.message ? e.message : e)); }
+  finally { enviandoAuto = false; pintarAuto(); }
+}
+
+function detenerSeguimientoGPS() {
+  try { if (geoWatchId !== null && GEO) GEO.clearWatch({ id: geoWatchId }).catch(() => {}); } catch (e) {}
+  geoWatchId = null;
+  try { if (geoWebId !== null && navigator.geolocation) navigator.geolocation.clearWatch(geoWebId); } catch (e) {}
+  geoWebId = null;
+}
+
+async function iniciarSeguimientoGPS(pedirPermiso) {
+  if (!autoGPS.on) return;
+  detenerSeguimientoGPS();
+  autoMsg("🛰️ Buscando señal GPS…");
+  if (NATIVO) {
+    try {
+      await conLimite(asegurarCapacitor(), 10000, "no cargó capacitor.js");
+      if (!GEO) GEO = capacitorExports.registerPlugin("Geolocation");   // nunca pasar GEO por una promesa (es un Proxy)
+      let perm = null;
+      try { perm = await conLimite(GEO.checkPermissions(), 8000, "sin respuesta"); } catch (e) { perm = null; }
+      if (!perm || perm.location !== "granted") {
+        if (!pedirPermiso) { autoMsg("⚠️ Falta el permiso de ubicación: abrí esta ventana, apagá y volvé a encender el interruptor."); return; }
+        perm = await conLimite(GEO.requestPermissions({ permissions: ["location"] }), 90000, "el permiso de ubicación no respondió (¿está apagada la ubicación del teléfono?)");
+        if (!perm || perm.location !== "granted") {
+          autoGPS.on = false; guardarAuto(); $("autoGPS").checked = false;
+          autoMsg("❌ Permiso de ubicación denegado. Habilitalo en Ajustes → Aplicaciones → Estación Móvil → Permisos → Ubicación.");
+          return;
+        }
+      }
+      permisoUbic = true;
+      await reiniciarServicio();        // el servicio pasa a tipo "ubicación" y sigue con la pantalla apagada
+      geoWatchId = await conLimite(GEO.watchPosition(
+        { enableHighAccuracy: true, timeout: 60000, maximumAge: 30000, minimumUpdateInterval: 20000, interval: 60000 },
+        (pos, err) => { if (pos && pos.coords) procesarPosicion(pos.coords, pos.timestamp); else if (err) autoMsg("⚠️ GPS: " + (err.message || err)); }), 15000, "el GPS no respondió");
+    } catch (e) {
+      autoMsg("⚠️ No se pudo iniciar el GPS: " + (e && e.message ? e.message : e));
+    }
+  } else {
+    if (!navigator.geolocation) { autoMsg("Este navegador no da la ubicación."); return; }
+    geoWebId = navigator.geolocation.watchPosition(pos => procesarPosicion(pos.coords, pos.timestamp),
+      err => autoMsg(err.code === 1 ? "❌ Permiso de ubicación denegado (habilitalo para esta página en Chrome)." : "⚠️ GPS: " + err.message),
+      { enableHighAccuracy: true, maximumAge: 30000, timeout: 60000 });
+    autoMsg("🛰️ Buscando señal GPS… (en la versión web solo funciona con la app abierta en pantalla)");
+  }
+}
+
+$("autoGPS").checked = autoGPS.on;
+$("autoGPS").addEventListener("change", async () => {
+  autoGPS.on = $("autoGPS").checked; guardarAuto();
+  mostrarUbicacion(ubic);
+  if (autoGPS.on) { await iniciarSeguimientoGPS(true); }
+  else {
+    detenerSeguimientoGPS(); ultPos = null; muestrasAlt = [];
+    autoMsg("Sigue al teléfono con el GPS: cambia el lugar al alejarte 10 km o más y corrige la altura para el QNH. Hace falta el Bluetooth conectado.");
+    if (NATIVO) { if (rxChar) await reiniciarServicio(); else detenerServicio(); }
+  }
+});
 
 // ===== ThingSpeak (field1 P, field2 QNH, field3 T, field4 HR, field5 rocío) =====
 // ----- Configuración guardada en 3 lugares (localStorage + IndexedDB + cookie) -----
@@ -2078,6 +2258,7 @@ aplicarEstilo(estiloInst);
 mostrarPronostico(leer("bme_pron", null));
 mostrarUbicacion(ubic);
 setTimeout(autoConectar, 300);
+if (autoGPS.on) setTimeout(() => iniciarSeguimientoGPS(false), 1500);
 cargarCfg().then(c => { if (c.canal) cargarThingSpeak(); });
 dibujarVivo();
 if (historial.length) {
