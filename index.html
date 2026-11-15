@@ -22,6 +22,11 @@
   *{box-sizing:border-box}
   body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--txt);
        padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+  html{overflow-x:auto}
+  body{touch-action:pan-x pan-y;min-width:0}
+  #btnZoom{position:fixed;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:9999;display:none;
+    padding:8px 12px;border-radius:20px;border:1px solid var(--line);background:var(--card);color:var(--txt);
+    font-size:14px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.4);transform-origin:bottom right}
   header{position:relative;padding:16px 40px 8px;text-align:center}
   header h1{font-size:30px;font-weight:800;margin:0;letter-spacing:.5px;line-height:1.15}
   header h1::after{content:"";display:block;width:64px;height:4px;border-radius:2px;background:var(--acc);margin:8px auto 0}
@@ -236,7 +241,7 @@
         <button class="sec" data-ver="mas">📊 Más datos</button>
       </div>
     </div>
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>14/11/2026 · 19:40</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>15/11/2026 · 09:30</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -1980,6 +1985,48 @@ if (!navigator.bluetooth && !NATIVO) {
   av.innerHTML = "Bluetooth web no disponible acá. Usá <b>Chrome en Android</b> (o <b>Bluefy</b> en iPhone) y abrí la app por <b>https://</b>. " +
                  "Igual podés ver el historial desde la pestaña <b>ThingSpeak</b>.";
 }
+</script>
+
+<button id="btnZoom" type="button" aria-label="Restablecer zoom">🔍 100%</button>
+<script>
+/* Zoom con dos dedos (pellizcar) sobre toda la app. Doble toque con dos dedos o el botón 🔍 = volver a 100 % */
+(function(){
+  var MIN=0.6, MAX=3, z=1, d0=0, z0=1, cx=0, cy=0, activo=false;
+  var btn=document.getElementById('btnZoom');
+  function dist(t){var a=t[0],b=t[1];return Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);}
+  function aplicar(nz,centroX,centroY){
+    nz=Math.max(MIN,Math.min(MAX,nz));
+    var de=document.documentElement;
+    var px=(de.scrollLeft+centroX)/z, py=(de.scrollTop+centroY)/z;
+    z=nz;
+    document.body.style.zoom=z;
+    window.scrollTo(px*z-centroX, py*z-centroY);
+    btn.style.zoom=1/z;
+    btn.style.display=(Math.abs(z-1)>0.02)?'block':'none';
+    btn.textContent='🔍 '+Math.round(z*100)+'%';
+  }
+  document.addEventListener('touchstart',function(e){
+    if(e.touches.length===2){
+      activo=true; d0=dist(e.touches); z0=z;
+      cx=(e.touches[0].clientX+e.touches[1].clientX)/2;
+      cy=(e.touches[0].clientY+e.touches[1].clientY)/2;
+    }
+  },{passive:true});
+  document.addEventListener('touchmove',function(e){
+    if(activo && e.touches.length===2 && d0>0){
+      e.preventDefault();
+      aplicar(z0*dist(e.touches)/d0, cx*z/z, cy);
+    }
+  },{passive:false});
+  document.addEventListener('touchend',function(e){
+    if(e.touches.length<2) activo=false;
+  },{passive:true});
+  btn.addEventListener('click',function(){aplicar(1,0,0);});
+  /* Para probar sin pantalla táctil: Ctrl + rueda del mouse */
+  window.addEventListener('wheel',function(e){
+    if(e.ctrlKey){e.preventDefault();aplicar(z*(e.deltaY<0?1.1:1/1.1),e.clientX,e.clientY);}
+  },{passive:false});
+})();
 </script>
 </body>
 </html>
