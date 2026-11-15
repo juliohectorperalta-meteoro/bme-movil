@@ -24,6 +24,7 @@
        padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
   html{overflow-x:auto}
   body{touch-action:pan-x pan-y;min-width:0}
+  #zoomCaja{overflow:visible}
   #btnZoom{position:fixed;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:9999;display:none;
     padding:8px 12px;border-radius:20px;border:1px solid var(--line);background:var(--card);color:var(--txt);
     font-size:14px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.4);transform-origin:bottom right}
@@ -241,7 +242,7 @@
         <button class="sec" data-ver="mas">📊 Más datos</button>
       </div>
     </div>
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>15/11/2026 · 10:40</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>15/11/2026 · 10:55</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -2043,14 +2044,19 @@ if (!navigator.bluetooth && !NATIVO) {
   var MIN=0.6, MAX=1.25, z=1, d0=0, z0=1, cx=0, cy=0, px=0, py=0, activo=false;
   var btn=document.getElementById('btnZoom');
   var raiz=document.createElement('div'); raiz.id='zoomRaiz'; raiz.style.transformOrigin='0 0';
+  var caja=document.createElement('div'); caja.id='zoomCaja';
   var h=document.querySelector('header'), m=document.querySelector('main');
-  h.parentNode.insertBefore(raiz,h); raiz.appendChild(h); raiz.appendChild(m);
+  h.parentNode.insertBefore(caja,h); caja.appendChild(raiz); raiz.appendChild(h); raiz.appendChild(m);
+  var W0=raiz.getBoundingClientRect().width;
+  raiz.style.width=W0+'px';
   document.documentElement.appendChild(btn);   /* el botón queda fijo en pantalla, fuera del zoom */
   function dist(t){return Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY);}
-  function offX(zz){return zz<1?window.innerWidth*(1-zz)/2:0;}
+  function offX(zz){return zz<1?W0*(1-zz)/2:0;}
+  function medir(){ caja.style.width=(W0*z)+'px'; caja.style.height=(raiz.offsetHeight*z+60)+'px'; caja.style.marginLeft=offX(z).toFixed(1)+'px'; }
+  if(window.ResizeObserver) new ResizeObserver(medir).observe(raiz);
   function aplicar(nz){
     z=Math.max(MIN,Math.min(MAX,nz));
-    raiz.style.transform='translate('+offX(z).toFixed(1)+'px,0) scale('+z+')';
+    raiz.style.transform='scale('+z+')'; medir();
     btn.textContent='🔍 '+Math.round(z*100)+'%';
     btn.style.display=(Math.abs(z-1)>0.02)?'block':'none';
   }
