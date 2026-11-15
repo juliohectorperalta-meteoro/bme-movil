@@ -56,7 +56,7 @@ jobs:
           if [ -f sw.js ]; then cp sw.js build/www/; fi
           cd build
           echo '{"name":"estacion-movil","version":"1.0.0","private":true}' > package.json
-          npm install @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8 @capacitor-community/bluetooth-le@8 @capawesome-team/capacitor-android-foreground-service@8
+          npm install @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8 @capacitor-community/bluetooth-le@8 @capawesome-team/capacitor-android-foreground-service@8 @capacitor/geolocation@8
           cp node_modules/@capacitor/core/dist/capacitor.js www/capacitor.js
           echo '{"appId":"ar.estacion.movil","appName":"Estación Móvil","webDir":"www"}' > capacitor.config.json
           npx cap add android
@@ -209,8 +209,8 @@ jobs:
           }
           JAVA
           # Servicio permanente (segundo plano): permisos, servicio y su ícono de notificación
-          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n</manifest>#' $M
-          sed -i 's#</application>#        <receiver android:name="io.capawesome.capacitorjs.plugins.foregroundservice.NotificationActionBroadcastReceiver" />\n        <service android:name="io.capawesome.capacitorjs.plugins.foregroundservice.AndroidForegroundService" android:foregroundServiceType="connectedDevice" />\n    </application>#' $M
+          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n</manifest>#' $M
+          sed -i 's#</application>#        <receiver android:name="io.capawesome.capacitorjs.plugins.foregroundservice.NotificationActionBroadcastReceiver" />\n        <service android:name="io.capawesome.capacitorjs.plugins.foregroundservice.AndroidForegroundService" android:foregroundServiceType="connectedDevice|location" />\n    </application>#' $M
           mkdir -p android/app/src/main/res/drawable
           echo '<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24"><path android:fillColor="#FFFFFFFF" android:pathData="M15,13V5c0,-1.66 -1.34,-3 -3,-3S9,3.34 9,5v8c-1.21,0.91 -2,2.37 -2,4 0,2.76 2.24,5 5,5s5,-2.24 5,-5c0,-1.63 -0.79,-3.09 -2,-4zM11,5c0,-0.55 0.45,-1 1,-1s1,0.45 1,1v6h-2V5z"/></vector>' > android/app/src/main/res/drawable/ic_estacion.xml
           # Ícono de la app: foto del barógrafo (icono.png del repositorio); si falta, barómetro dibujado
