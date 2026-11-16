@@ -245,7 +245,7 @@
         <button class="sec" data-ver="mas">📊 Más datos</button>
       </div>
     </div>
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>15/11/2026 · 13:45</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 09:50</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -348,6 +348,24 @@ const guardar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } 
 const leer = (k, def) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch (e) { return def; } };
 
 let historial = leer("bme_hist", []);           // lecturas en vivo: {t, T, H, R, P, Q}
+// Hora de la lectura según la estación ("16/11/2026 09:15:03 ART"), en milisegundos; Argentina es UTC-3 todo el año
+function tDeHora(hora) {
+  const m = String(hora || "").match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
+  return m ? Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4], +m[5], +m[6]) + 3 * 3600e3 : NaN;
+}
+// Una lectura por minuto: junta las que quedaron repetidas (la misma lectura recibida en vivo y recuperada de la estación)
+function sinRepetidas(arr) {
+  arr.sort((a, b) => a.t - b.t);
+  const out = [];
+  for (const x of arr) { const u = out[out.length - 1]; if (u && x.t - u.t < 40000) continue; out.push(x); }
+  return out;
+}
+(function arreglarHistorial() {      // las lecturas viejas guardadas en el teléfono se corrigen al abrir la app
+  for (const x of historial) { const t = tDeHora(x.hora); if (!isNaN(t) && Math.abs(t - x.t) <= 90 * 60e3) x.t = t; }
+  const antes = historial.length;
+  historial = sinRepetidas(historial);
+  if (historial.length !== antes) guardar("bme_hist", historial);
+})();
 const MAX_HIST_MS = 24 * 3600 * 1000;
 let tsQ = [];   // QNH leído de ThingSpeak: {t, Q}, para completar el mínimo y el máximo
 // Mínimo y máximo del QNH en las últimas 24 h (historial en vivo + ThingSpeak + lectura actual)
@@ -1075,7 +1093,7 @@ function procesarLinea(linea) {
   if (linea.startsWith("[H] ")) {
     if (linea.startsWith("[H] FIN")) {
       if (histNuevas) {
-        historial.sort((a, b) => a.t - b.t);
+        historial = sinRepetidas(historial);
         const corte = Date.now() - MAX_HIST_MS;
         historial = historial.filter(x => x.t >= corte);
         guardar("bme_hist", historial);
@@ -1129,10 +1147,13 @@ function procesarLinea(linea) {
       P: num(/\|\s*P\s+(-?[\d.]+)\s*hPa/, linea),
       alt: num(/alt\s+(-?[\d.]+)\s*m/, linea)
     };
-    // la misma lectura puede llegar dos veces (comando "Última"): no duplicar en el historial
-    const ult = historial[historial.length - 1];
-    if (!ult || ult.hora !== lect.hora) {
+    // la hora de la lectura es la de la estación (no la de llegada): en segundo plano el teléfono puede entregarla con demora
+    const tH = tDeHora(lect.hora);
+    if (!isNaN(tH) && Math.abs(tH - lect.t) <= 90 * 60e3) lect.t = tH;
+    // la misma lectura puede llegar dos veces (comando "Última" o recuperación del historial): no duplicar
+    if (!historial.some(x => Math.abs(x.t - lect.t) < 40000 || (x.hora && x.hora === lect.hora))) {
       historial.push({ t: lect.t, T: lect.T, H: lect.H, R: lect.R, P: lect.P, Q: lect.Q, hora: lect.hora });
+      historial = sinRepetidas(historial);
       const corte = Date.now() - MAX_HIST_MS;
       historial = historial.filter(x => x.t >= corte);
       guardar("bme_hist", historial);
