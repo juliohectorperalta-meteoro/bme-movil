@@ -819,10 +819,12 @@ svg.leaflet-image-layer.leaflet-interactive path {
   .rcapas{display:flex;gap:6px;margin:0 0 8px}
   .rcapas button{flex:1;background:var(--card2);color:var(--sub);border:1px solid var(--line);padding:9px 4px;font-size:13px}
   .rcapas button.act{background:var(--acc);color:#fff;border-color:var(--acc)}
-  #mapaRadar{height:56vh;min-height:300px;border-radius:12px;overflow:hidden;background:#222;touch-action:none}
+  body.vistaRadar header, body.vistaRadar main > .row, body.vistaRadar #estado, body.vistaRadar #avisoBT, body.vistaRadar #alarmas, body.vistaRadar #hora, body.vistaRadar #extQ, body.vistaRadar #extT, body.vistaRadar #extP{display:none}
+  body.vistaRadar .tabs{margin-top:8px}
+  #mapaRadar{height:calc(100vh - 430px);height:calc(100dvh - 430px);min-height:220px;border-radius:12px;overflow:hidden;background:#222;touch-action:none}
   .rctl{display:flex;gap:8px;align-items:center;margin:8px 0}
   .rctl input[type=range]{flex:1}
-  #rHora{font-size:13px;min-width:120px;text-align:right;font-variant-numeric:tabular-nums}
+  #rHora{font-size:12px;min-width:105px;text-align:right;font-variant-numeric:tabular-nums}
 </style>
 <script>/* @preserve
  * Leaflet 1.9.4, a JS library for interactive maps. https://leafletjs.com
@@ -922,8 +924,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
       <button id="rPlay" class="sec" disabled>▶ Reproducir</button>
       <input type="range" id="rBarra" min="0" max="0" value="0" step="1" disabled>
       <span id="rHora"></span>
+      <button class="sec" id="rCentrar" title="Centrar en mi ubicación" style="padding:8px 12px">📍</button>
     </div>
-    <div class="row" style="margin:0 0 6px"><button class="sec" id="rCentrar">📍 Centrar en mi ubicación</button></div>
     <div class="estado" id="rEstado"></div>
     <div class="ext" id="rTexto"></div>
     <div class="ext" style="margin-top:6px">Satélite: GOES-East (NOAA) vía NASA GIBS · Radar: <a href="https://www.rainviewer.com" target="_blank" rel="noopener" style="color:inherit">Weather data by RainViewer</a> · Mapa: © OpenStreetMap</div>
@@ -938,7 +940,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <button class="sec" data-ver="mas">📊 Más datos</button>
       </div>
     </div>
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 10:40</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 10:55</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -1122,6 +1124,7 @@ function mostrarTab(nombre) {
   const sinInstrumentos = VISTAS_EN_CFG.includes(nombre) || nombre === "radar";
   ["gridInst", "extQ", "extT", "extP"].forEach(id => $(id).classList.toggle("oculto", sinInstrumentos));
   guardar("bme_tab", nombre);
+  document.body.classList.toggle("vistaRadar", nombre === "radar");        // el radar usa toda la pantalla: sin avisos ni alarmas
   if (nombre === "radar" && window.radarAbrir) window.radarAbrir();      // al final: el mapa se mide con el diseño ya acomodado
   if (nombre !== "radar" && window.radarPausa) window.radarPausa();
 }
