@@ -928,7 +928,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     </div>
     <div class="estado" id="rEstado"></div>
     <div class="ext" id="rTexto"></div>
-    <div class="ext" style="margin-top:6px">Satélite: GOES-East (NOAA) vía NASA GIBS · Radar: <a href="https://www.rainviewer.com" target="_blank" rel="noopener" style="color:inherit">Weather data by RainViewer</a> · Mapa: © OpenStreetMap</div>
+    <div class="ext" style="margin-top:6px">Satélite: GOES-East (NOAA) vía NASA GIBS · Radar: <a href="https://www.rainviewer.com" target="_blank" rel="noopener" style="color:inherit">Weather data by RainViewer</a> · Mapa: Esri / © OpenStreetMap</div>
   </section>
 
   <section id="tab-cfg" class="oculto">
@@ -940,7 +940,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <button class="sec" data-ver="mas">📊 Más datos</button>
       </div>
     </div>
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 16:20</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 16:50</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -3081,9 +3081,8 @@ if (!navigator.bluetooth && !NATIVO) {
     // Mapa de fondo con respaldo: si un proveedor no entrega mosaicos (p. ej. OpenStreetMap rechaza las apps sin Referer),
     // tras varios errores seguidos sin ninguna imagen cargada se pasa al siguiente.
     const FONDOS = [
-      { url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png", sub: "abcd", at: "© OpenStreetMap © CARTO" },
-      { url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", sub: "", at: "Tiles © Esri" },
-      { url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", sub: "", at: "© OpenStreetMap" }
+      { url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", sub: "", at: "© OpenStreetMap" },
+      { url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", sub: "", at: "Tiles © Esri" }
     ];
     let fi = -1;
     const siguienteFondo = () => {
@@ -3128,6 +3127,17 @@ if (!navigator.bluetooth && !NATIVO) {
       if (capasMapa[k]) return;
       capasMapa[k] = L.tileLayer(plantilla(k), { maxNativeZoom: cuadros.nativo, maxZoom: 9, opacity: 0, tileSize: 256, className: "rcuadro" }).addTo(mapa);
     });
+  }
+
+  // Autoplay: los cuadros se agregan de a uno (cada 350 ms) para no saturar la conexión del teléfono
+  // (cargar los 12 de golpe dejaba sin mosaicos al mapa de fondo). Recién después empieza a reproducir.
+  async function precargarEscalonado(v) {
+    for (let k = 0; k < cuadros.length; k++) {
+      if (v !== versionCarga) return false;
+      if (!capasMapa[k]) capasMapa[k] = L.tileLayer(plantilla(k), { maxNativeZoom: cuadros.nativo, maxZoom: 9, opacity: 0, tileSize: 256, className: "rcuadro", keepBuffer: 0 }).addTo(mapa);
+      await new Promise(r => setTimeout(r, 350));
+    }
+    return v === versionCarga;
   }
 
   function pausa() {
@@ -3184,7 +3194,7 @@ if (!navigator.bluetooth && !NATIVO) {
       $("rBarra").max = cuadros.length - 1; $("rBarra").disabled = false; $("rPlay").disabled = false;
       $("rEstado").textContent = "Cuadros: " + cuadros.length + " · último " + hora(cuadros[cuadros.length - 1].t);
       mostrar(cuadros.length - 1);
-      reproducir();                       // reproducción automática al cargar
+      precargarEscalonado(v).then(ok => { if (ok && !reproduciendo) reproducir(); });   // reproducción automática
     } catch (e) {
       if (v === versionCarga) $("rEstado").textContent = "No se pudo cargar (" + (e.message || e) + "). ¿Hay internet?";
     }
