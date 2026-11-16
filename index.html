@@ -940,7 +940,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <button class="sec" data-ver="mas">📊 Más datos</button>
       </div>
     </div>
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 11:10</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 16:00</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -3167,6 +3167,7 @@ if (!navigator.bluetooth && !NATIVO) {
       $("rBarra").max = cuadros.length - 1; $("rBarra").disabled = false; $("rPlay").disabled = false;
       $("rEstado").textContent = "Cuadros: " + cuadros.length + " · último " + hora(cuadros[cuadros.length - 1].t);
       mostrar(cuadros.length - 1);
+      reproducir();                       // reproducción automática al cargar
     } catch (e) {
       if (v === versionCarga) $("rEstado").textContent = "No se pudo cargar (" + (e.message || e) + "). ¿Hay internet?";
     }
@@ -3180,6 +3181,7 @@ if (!navigator.bluetooth && !NATIVO) {
       mapa.setView([ubic.lat, ubic.lon], mapa.getZoom());
       marca.setLatLng([ubic.lat, ubic.lon]);
       if (!cuadros.length || Date.now() - ultimaCarga > 10 * 60e3) cargarCapa();
+      else if (!reproduciendo) reproducir();   // al volver a la pestaña, arranca sola
     }, 50);
   };
   window.radarPausa = pausa;
