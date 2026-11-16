@@ -821,6 +821,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
   .rcapas button.act{background:var(--acc);color:#fff;border-color:var(--acc)}
   body.vistaRadar header, body.vistaRadar main > .row, body.vistaRadar #estado, body.vistaRadar #avisoBT, body.vistaRadar #alarmas, body.vistaRadar #hora, body.vistaRadar #extQ, body.vistaRadar #extT, body.vistaRadar #extP{display:none}
   body.vistaRadar .tabs{margin-top:8px}
+  body.vistaMas #alarmas{display:none}
   #mapaRadar{height:calc(100vh - 430px);height:calc(100dvh - 430px);min-height:220px;border-radius:12px;overflow:hidden;background:#222;touch-action:none}
   .rctl{display:flex;gap:8px;align-items:center;margin:8px 0}
   .rctl input[type=range]{flex:1}
@@ -940,7 +941,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <button class="sec" data-ver="mas">📊 Más datos</button>
       </div>
     </div>
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 17:10</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 20:00</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -1124,6 +1125,7 @@ function mostrarTab(nombre) {
   const sinInstrumentos = VISTAS_EN_CFG.includes(nombre) || nombre === "radar";
   ["gridInst", "extQ", "extT", "extP"].forEach(id => $(id).classList.toggle("oculto", sinInstrumentos));
   guardar("bme_tab", nombre);
+  document.body.classList.toggle("vistaMas", nombre === "mas");           // Más datos: sin carteles de alarmas (siguen vibrando y notificando)
   document.body.classList.toggle("vistaRadar", nombre === "radar");        // el radar usa toda la pantalla: sin avisos ni alarmas
   if (nombre === "radar" && window.radarAbrir) window.radarAbrir();      // al final: el mapa se mide con el diseño ya acomodado
   if (nombre !== "radar" && window.radarPausa) window.radarPausa();
@@ -1437,6 +1439,15 @@ function zambretti(q, d3) {
   else { z = Math.min(Math.max(Math.round(144 - 0.13 * q), 10), 18); tend = "estable"; }
   return [ZAMB[z], tend];
 }
+// Humedad que sube bruscamente con la presión bajando (en 30 min): señal de aire cargado de agua y posible tormenta
+const UMBRAL_HUM_G = 1.5, UMBRAL_PRES_HPA = 0.5;      // g/m³ de aumento y hPa de caída, ambos en 30 min
+function cambio30(l) {
+  if (!l || isNaN(l.T) || isNaN(l.H) || isNaN(l.P)) return null;
+  const cand = historial.filter(x => x.t >= l.t - 36 * 60e3 && x.t <= l.t - 24 * 60e3 && !isNaN(x.T) && !isNaN(x.H) && !isNaN(x.P));
+  if (!cand.length) return null;
+  const m = cand.reduce((a, b) => Math.abs(b.t - (l.t - 30 * 60e3)) < Math.abs(a.t - (l.t - 30 * 60e3)) ? b : a);
+  return { dHA: humedadAbsoluta(l.T, l.H) - humedadAbsoluta(m.T, m.H), dP: l.P - m.P, min: Math.round((l.t - m.t) / 60e3) };
+}
 function dibujarMasDatos(l, q3h) {
   if (!l || isNaN(l.T)) return;
   const hayH = !isNaN(l.H), hayR = !isNaN(l.R), n1 = v => v.toFixed(1);
@@ -1449,6 +1460,16 @@ function dibujarMasDatos(l, q3h) {
     h += tarj("🔮 Pronóstico por presión (Zambretti)", '<span style="font-size:19px">' + txt + "</span>", "",
       hay3 ? "Presión " + tend + " (" + (l.Q - q3h >= 0 ? "+" : "") + n1(l.Q - q3h) + " hPa en 3 h). Método clásico, orientativo: no reemplaza al pronóstico de la IA."
            : "Todavía no hay 3 h de lecturas: se toma la presión como estable. Orientativo.", true);
+  }
+  // Humedad y presión (30 min)
+  {
+    const c = cambio30(l);
+    if (c) {
+      const alarma = c.dHA >= UMBRAL_HUM_G && c.dP <= -UMBRAL_PRES_HPA;
+      h += tarj("⚡ Humedad y presión (30 min)", '<span style="font-size:19px">' + (alarma ? "⚠️ Aire cargándose" : "✅ Sin señal") + "</span>", "",
+        "Humedad absoluta " + (c.dHA >= 0 ? "+" : "") + n1(c.dHA) + " g/m³ · presión " + (c.dP >= 0 ? "+" : "") + n1(c.dP) + " hPa (en " + c.min + " min). " +
+        (alarma ? "Suba brusca de humedad con la presión bajando: puede acercarse una tormenta." : "Avisa si la humedad sube " + UMBRAL_HUM_G + " g/m³ o más mientras la presión baja " + UMBRAL_PRES_HPA + " hPa o más."), true);
+    } else h += tarj("⚡ Humedad y presión (30 min)", "--", "", "Hace falta media hora de lecturas para compararlas.", true);
   }
   if (hayH) {
     const st = indiceCalor(l.T, l.H);
@@ -2307,6 +2328,9 @@ function calcularAlarmasMovil(l) {
     a.push({ k: "pres3", t: "📉 Caída brusca de presión", d: (l.Q - h3.Q).toFixed(1) + " hPa en 3 h. Posible desmejoramiento: atento a tormentas y viento." });
   else if (h1 && !isNaN(l.Q) && l.Q - h1.Q <= -2)
     a.push({ k: "pres1", t: "📉 La presión cae rápido", d: (l.Q - h1.Q).toFixed(1) + " hPa en la última hora." });
+  const cb = cambio30(l);
+  if (cb && cb.dHA >= UMBRAL_HUM_G && cb.dP <= -UMBRAL_PRES_HPA)
+    a.push({ k: "humSube", t: "💧 Sube la humedad y baja la presión", d: "Humedad absoluta +" + cb.dHA.toFixed(1) + " g/m³ y presión " + cb.dP.toFixed(1) + " hPa en " + cb.min + " min." });
   if (m30 && !isNaN(l.T) && l.T - m30.T <= -3)
     a.push({ k: "rafaga", t: "⛈️ Caída brusca de temperatura", d: (l.T - m30.T).toFixed(1) + " °C en 30 min: posible ráfaga fría o entrada de tormenta." });
   if (!isNaN(l.T) && l.T < 2)
@@ -2348,7 +2372,7 @@ function dibujarAlarmas() {
     avisoHablado("Presión baja rápidamente, más de 3 hectopascales en " + rapida.min + " minutos");
   clavesAvisadas = claves;
   if (nueva) {
-    try { navigator.vibrate && navigator.vibrate([300, 150, 300]); } catch (err) {}
+    vibrarAlarma([300, 150, 300]);
     const partes = [];
     if (e && e.tipo === "oficial") partes.push("🚨 SMN: " + e.texto.split("\n")[0]);
     else if (e && e.tipo === "local") partes.push("⚠️ " + e.texto.split("\n")[0]);
@@ -2857,15 +2881,23 @@ function alarmaNativa() {
   if (!AV) { try { AV = capacitorExports.registerPlugin("AlarmaVoz"); } catch (e) { return null; } }
   return AV;
 }
+// Vibración de alarma: en la app Android va por el canal de alarmas (vibra aunque la opción "vibrar" del teléfono esté desmarcada);
+// en el navegador usa la vibración común.
+function vibrarAlarma(patron) {
+  const nat = alarmaNativa();
+  const comun = () => { try { navigator.vibrate && navigator.vibrate(patron); } catch (e) {} };
+  if (nat && nat.vibrar) nat.vibrar({ patron }).catch(comun);
+  else comun();
+}
 function avisoHablado(frase) {
   const nat = alarmaNativa();
   if (nat) {
-    try { navigator.vibrate && navigator.vibrate([500, 200, 500, 200, 500]); } catch (e) {}
+    vibrarAlarma([500, 200, 500, 200, 500]);
     nat.hablar({ texto: frase, repeticiones: 2 }).catch(e => agregarLog("Aviso hablado: " + (e && e.message ? e.message : e)));
     return;
   }
   const espera = tonosAlarma();
-  try { navigator.vibrate && navigator.vibrate([500, 200, 500, 200, 500]); } catch (e) {}
+  vibrarAlarma([500, 200, 500, 200, 500]);
   setTimeout(() => {
     try {
       if (!window.speechSynthesis) return;
