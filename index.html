@@ -940,7 +940,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <button class="sec" data-ver="mas">📊 Más datos</button>
       </div>
     </div>
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 10:55</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 11:10</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -3081,8 +3081,10 @@ if (!navigator.bluetooth && !NATIVO) {
     base = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 9, opacity: 0.9, attribution: "© OpenStreetMap" }).addTo(mapa);
     marca = L.circleMarker([ubic.lat, ubic.lon], { radius: 6, color: "#fff", weight: 2, fillColor: "#e53935", fillOpacity: 1 }).addTo(mapa);
     // el mapa maneja sus propios gestos: que el zoom de pantalla de la app no se meta
+    window.mapaRadar = mapa;
     const el = $("mapaRadar");
-    ["touchstart", "touchmove", "touchend"].forEach(ev => el.addEventListener(ev, e => e.stopPropagation(), { passive: true }));
+    // (solo touchstart: así el zoom de la app no arranca; Leaflet sigue el gesto con touchmove/touchend en document)
+    el.addEventListener("touchstart", e => e.stopPropagation(), { passive: true });
   }
 
   function quitarCuadros() {
