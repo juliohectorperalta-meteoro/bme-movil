@@ -932,7 +932,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <button class="sec" data-ver="mas">📊 Más datos</button>
       </div>
     </div>
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 20:30</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 20:55</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -948,6 +948,12 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <button class="sec" id="estVintage">🕰️ Vintage 1950</button>
         <button class="sec" id="estModerno">📱 Moderno</button>
       </div>
+    </div>
+    <div class="card" style="margin-bottom:10px">
+      <b>Alarmas de lluvia y tormentas</b>
+      <label style="display:flex;gap:10px;align-items:center;margin-top:10px"><input type="checkbox" id="chkLluvia" style="width:auto"> Avisar si va a llover en mi ubicación</label>
+      <label style="display:flex;gap:10px;align-items:center;margin-top:8px"><input type="checkbox" id="chkTormenta" style="width:auto"> Avisar de tormentas con lluvia fuerte a menos de 30 km</label>
+      <div class="estado">Usa pronósticos de modelos (Open-Meteo), no es una medición. Solo actualiza con la app abierta y con internet.</div>
     </div>
     <div class="card">
       <b>Canal ThingSpeak del BME280 móvil</b>
@@ -2349,7 +2355,7 @@ function dibujarAlarmas() {
             (rec.length ? "<br><i>" + md(rec.join(" ")) + "</i>" : "") + pie + "</div>";
   }
   for (const m of lista)
-    html += '<div class="alr movil"><div class="t">' + esc(m.t) + ' <span style="font-weight:400;font-size:12px">· ' + (m.k === "lluvia" ? "modelos" : "sensor móvil") + '</span></div>' + esc(m.d) + "</div>";
+    html += '<div class="alr movil"><div class="t">' + esc(m.t) + ' <span style="font-weight:400;font-size:12px">· ' + (m.k === "lluvia" || m.k === "tormenta" ? "modelos" : "sensor móvil") + '</span></div>' + esc(m.d) + "</div>";
   if (!html && (e || historial.length))
     html = '<div class="alr ok">✅ Sin alertas' + (e && e.tipo === "ninguna" && !vieja ? "" : e ? " (dato de la estación de hace más de 2 h)" : "") + "</div>";
   $("alarmas").innerHTML = html;
@@ -2376,7 +2382,17 @@ function dibujarAlarmas() {
 // ===== Alarma de lluvia: modelos de Open-Meteo (pronóstico, no es una medición). Se consulta cada 10 min con la app abierta =====
 const UMBRAL_LLUVIA_MM = 0.3;          // mm esperados en la próxima hora para avisar
 let lluviaProx = null;                  // { t, mm, min }  (min = minutos hasta que empieza; 0 = ahora)
+let optLluvia = leer("bme_op_lluvia", true), optTormenta = leer("bme_op_tormenta", true);
 function alarmaLluvia() {
+  const r = [];
+  if (optTormenta && tormentaProx && Date.now() - tormentaProx.t < 25 * 60e3 && tormentaProx.hay) {
+    const q = tormentaProx;
+    r.push({ k: "tormenta", t: "⛈️ Tormenta con lluvia fuerte cerca", d: (q.km <= 5 ? "Sobre tu zona" : "A unos " + Math.round(q.km / 5) * 5 + " km al " + q.dir) +
+      (q.min <= 5 ? ", ahora" : ", en unos " + Math.round(q.min / 5) * 5 + " min") + ": hasta " + q.mmh.toFixed(0) + " mm/h" + (q.tor ? " con tormenta eléctrica" : "") + " (según modelos)." });
+  }
+  return r.concat(optLluvia ? alarmaLluviaPunto() : []);
+}
+function alarmaLluviaPunto() {
   if (!lluviaProx || Date.now() - lluviaProx.t > 25 * 60e3 || lluviaProx.mm < UMBRAL_LLUVIA_MM) return [];
   const cuando = lluviaProx.min <= 5 ? "Puede estar lloviendo ahora" : "Podría empezar en unos " + Math.round(lluviaProx.min / 5) * 5 + " min";
   return [{ k: "lluvia", t: lluviaProx.min <= 5 ? "🌧️ Lluvia ahora" : "🌧️ Lluvia en camino", d: cuando + ": se esperan " + lluviaProx.mm.toFixed(1) + " mm en la próxima hora (según modelos)." }];
@@ -2398,8 +2414,51 @@ async function consultarLluvia() {
     dibujarAlarmas();
   } catch (e) { /* sin internet: se reintenta en 10 min; el último dato vale hasta 25 min */ }
 }
+// Tormentas cercanas: centro + anillos a 15 y 30 km en 8 direcciones (17 puntos). "Fuerte" = 7,5 mm/h o más, o tormenta eléctrica (códigos 95-99)
+let tormentaProx = null;
+const DIRS = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"];
+async function consultarTormentas() {
+  if (!optTormenta) { tormentaProx = null; return; }
+  try {
+    const lat0 = ubic && !isNaN(ubic.lat) ? ubic.lat : -31.4271, lon0 = ubic && !isNaN(ubic.lon) ? ubic.lon : -64.2183;
+    const pts = [{ lat: lat0, lon: lon0, km: 0, dir: "" }];
+    for (const km of [15, 30]) for (let b = 0; b < 8; b++) {
+      const ang = b * Math.PI / 4;
+      pts.push({ lat: lat0 + km * Math.cos(ang) / 111.2, lon: lon0 + km * Math.sin(ang) / (111.2 * Math.cos(lat0 * Math.PI / 180)), km, dir: DIRS[b] });
+    }
+    const j = await fetch("https://api.open-meteo.com/v1/forecast?latitude=" + pts.map(p => p.lat.toFixed(3)).join(",") + "&longitude=" + pts.map(p => p.lon.toFixed(3)).join(",") +
+      "&minutely_15=precipitation,weather_code&forecast_minutely_15=6&timeformat=unixtime&timezone=UTC", { cache: "no-store" }).then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+    const res = Array.isArray(j) ? j : [j], ahora = Date.now() / 1000;
+    let mejor = null;
+    res.forEach((o, i) => {
+      const m = o.minutely_15; if (!m) return;
+      for (let k = 0; k < m.time.length; k++) {
+        if (m.time[k] + 900 <= ahora || m.time[k] >= ahora + 3600) continue;   // franja actual y próxima hora
+        const mmh = (m.precipitation[k] || 0) * 4, cod = m.weather_code[k] || 0, tor = cod >= 95;
+        if (mmh < 7.5 && !tor) continue;
+        const min = Math.max(0, Math.round((m.time[k] - ahora) / 60));
+        const c = { hay: true, km: pts[i].km, dir: pts[i].dir, min, mmh: Math.max(mmh, 0), tor };
+        if (!mejor || c.km < mejor.km || (c.km === mejor.km && c.min < mejor.min)) mejor = c;
+        else if (c.km === mejor.km && c.min === mejor.min && c.mmh > mejor.mmh) mejor = c;
+      }
+    });
+    tormentaProx = Object.assign({ t: Date.now(), hay: false }, mejor || {});
+    alarmasMovil = ultimaLectura ? calcularAlarmasMovil(ultimaLectura) : [];
+    dibujarAlarmas();
+  } catch (e) { /* sin internet: se reintenta en 10 min */ }
+}
+function iniciarOpcionesLluvia() {
+  const a = $("chkLluvia"), b = $("chkTormenta");
+  if (!a || !b) return;
+  a.checked = optLluvia; b.checked = optTormenta;
+  a.addEventListener("change", () => { optLluvia = a.checked; guardar("bme_op_lluvia", optLluvia); dibujarAlarmas(); });
+  b.addEventListener("change", () => { optTormenta = b.checked; guardar("bme_op_tormenta", optTormenta); if (optTormenta) consultarTormentas(); else { tormentaProx = null; dibujarAlarmas(); } });
+}
+iniciarOpcionesLluvia();
 setTimeout(consultarLluvia, 4000);
 setInterval(consultarLluvia, 10 * 60e3);
+setTimeout(consultarTormentas, 6000);
+setInterval(consultarTormentas, 10 * 60e3);
 
 // Texto de Telegram (Markdown simple) -> HTML prolijo
 function esc(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
