@@ -940,7 +940,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <button class="sec" data-ver="mas">📊 Más datos</button>
       </div>
     </div>
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 16:50</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 17:10</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -3068,9 +3068,18 @@ if (!navigator.bluetooth && !NATIVO) {
     });
   }
   async function ultimoCuadroGOES(c) {
-    // tile de bajo zoom que cubre Córdoba (z3, fila 4, columna 2); el cuadro más nuevo suele estar 20-60 min atrás
-    let t = Math.floor((Date.now() - 10 * 60e3) / 600e3) * 600e3;
-    for (let i = 0; i < 14; i++, t -= 600e3) if (await existe(GIBS + c.nombre + "/default/" + iso(t) + "/" + c.tms + "/3/4/2.png")) return t;
+    // tile de bajo zoom que cubre Córdoba (z3, fila 4, columna 2). La NASA a veces se atrasa horas:
+    // se busca hacia atrás de a 30 min (hasta 36 h) y, al encontrar uno, se afina hacia adelante de a 10 min.
+    const tile = t => GIBS + c.nombre + "/default/" + iso(t) + "/" + c.tms + "/3/4/2.png";
+    const t0 = Math.floor((Date.now() - 10 * 60e3) / 600e3) * 600e3;
+    for (let k = 0; k < 72; k += 3) {
+      const t = t0 - k * 600e3;
+      if (await existe(tile(t))) {
+        let mejor = t;
+        for (let j = 1; j <= 2; j++) { const u = t + j * 600e3; if (u > t0 || !(await existe(tile(u)))) break; mejor = u; }
+        return mejor;
+      }
+    }
     return null;
   }
 
@@ -3192,7 +3201,8 @@ if (!navigator.bluetooth && !NATIVO) {
       }
       ultimaCarga = Date.now();
       $("rBarra").max = cuadros.length - 1; $("rBarra").disabled = false; $("rPlay").disabled = false;
-      $("rEstado").textContent = "Cuadros: " + cuadros.length + " · último " + hora(cuadros[cuadros.length - 1].t);
+      { const mn = Math.round((Date.now() - cuadros[cuadros.length - 1].t) / 60000);
+        $("rEstado").textContent = "Cuadros: " + cuadros.length + " · último " + hora(cuadros[cuadros.length - 1].t) + (mn > 90 ? " (la NASA lo publicó con " + Math.round(mn / 60) + " h de atraso)" : ""); }
       mostrar(cuadros.length - 1);
       precargarEscalonado(v).then(ok => { if (ok && !reproduciendo) reproducir(); });   // reproducción automática
     } catch (e) {
