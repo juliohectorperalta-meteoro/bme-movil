@@ -932,14 +932,15 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <button class="sec" data-ver="mas">📊 Más datos</button>
       </div>
     </div>
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 20:55</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 21:05</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
         aunque la pantalla esté apagada o uses otra aplicación.</p>
       <div class="row"><button class="sec" id="btnFondo">🌙 Activar segundo plano</button>
         <button class="sec" id="btnProbarVoz">🔊 Probar aviso de 5 min</button>
-        <button class="sec" id="btnProbarVoz15">🔊 Probar aviso de 15 min</button></div>
+        <button class="sec" id="btnProbarVoz15">🔊 Probar aviso de 15 min</button>
+        <button class="sec" id="btnProbarVib">📳 Probar vibración</button></div>
       <div class="estado" id="estadoFondo"></div>
     </div>
     <div class="card" style="margin-bottom:10px">
@@ -2992,6 +2993,11 @@ function avisoHablado(frase) {
   }, espera);
 }
 $("btnProbarVoz").addEventListener("click", () => avisoHablado("Presión baja rápidamente, más de 3 hectopascales en 5 minutos"));
+$("btnProbarVib").addEventListener("click", () => {
+  vibrarAlarma([500, 200, 500, 200, 500]);
+  const nat = alarmaNativa();
+  $("estadoFondo").textContent = nat && nat.vibrar ? "Vibración nativa enviada (si no vibra, revisá que el celular no esté en modo No molestar)." : "Esta versión del APK no tiene vibración nativa: reinstalá el APK compilado con apk.yml v9. En el navegador la vibración depende del celular.";
+});
 $("btnProbarVoz15").addEventListener("click", () => avisoHablado("Presión baja rápidamente, más de 3 hectopascales en 15 minutos"));
 
 // ===== Segundo plano: mantener la app despierta + notificaciones =====
