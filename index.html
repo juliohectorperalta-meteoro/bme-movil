@@ -940,7 +940,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <button class="sec" data-ver="mas">📊 Más datos</button>
       </div>
     </div>
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 16:00</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 16:20</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -3078,7 +3078,24 @@ if (!navigator.bluetooth && !NATIVO) {
     if (mapa || typeof L === "undefined") return;
     mapa = L.map("mapaRadar", { zoomControl: true, attributionControl: true, minZoom: 3, maxZoom: 9, zoomSnap: 0.5, preferCanvas: true })   // canvas: la regla "svg{width:100%}" de la app rompería el SVG de Leaflet
             .setView([ubic.lat, ubic.lon], 6);
-    base = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 9, opacity: 0.9, attribution: "© OpenStreetMap" }).addTo(mapa);
+    // Mapa de fondo con respaldo: si un proveedor no entrega mosaicos (p. ej. OpenStreetMap rechaza las apps sin Referer),
+    // tras varios errores seguidos sin ninguna imagen cargada se pasa al siguiente.
+    const FONDOS = [
+      { url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png", sub: "abcd", at: "© OpenStreetMap © CARTO" },
+      { url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", sub: "", at: "Tiles © Esri" },
+      { url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", sub: "", at: "© OpenStreetMap" }
+    ];
+    let fi = -1;
+    const siguienteFondo = () => {
+      if (base) { mapa.removeLayer(base); base = null; }
+      fi++; if (fi >= FONDOS.length) fi = 0;
+      const f = FONDOS[fi]; let errores = 0, ok = 0;
+      base = L.tileLayer(f.url, { maxZoom: 9, opacity: 0.9, attribution: f.at, subdomains: f.sub || "abc" }).addTo(mapa);
+      base.bringToBack();
+      base.on("tileload", () => { ok++; });
+      base.on("tileerror", () => { if (++errores >= 4 && ok === 0) { base.off(); siguienteFondo(); } });
+    };
+    siguienteFondo();
     marca = L.circleMarker([ubic.lat, ubic.lon], { radius: 6, color: "#fff", weight: 2, fillColor: "#e53935", fillOpacity: 1 }).addTo(mapa);
     // el mapa maneja sus propios gestos: que el zoom de pantalla de la app no se meta
     window.mapaRadar = mapa;
