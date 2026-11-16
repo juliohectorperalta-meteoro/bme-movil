@@ -79,6 +79,9 @@ jobs:
           import android.media.ToneGenerator;
           import android.os.Build;
           import android.os.Handler;
+          import android.os.VibrationEffect;
+          import android.os.Vibrator;
+          import com.getcapacitor.JSArray;
           import android.os.Looper;
           import android.speech.tts.TextToSpeech;
           import com.getcapacitor.Plugin;
@@ -157,6 +160,7 @@ jobs:
                       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                           NotificationChannel canal = new NotificationChannel("alarmas", "Alarmas meteorológicas", NotificationManager.IMPORTANCE_HIGH);
                           canal.enableVibration(true);
+                          canal.setVibrationPattern(new long[] {0, 300, 150, 300});
                           nm.createNotificationChannel(canal);
                           b = new Notification.Builder(ctx, "alarmas");
                       } else {
@@ -180,6 +184,42 @@ jobs:
                       call.resolve();
                   } catch (Exception e) {
                       call.reject("No se pudo mostrar la notificación: " + e.getMessage());
+                  }
+              }
+
+              // Vibración por el canal de ALARMAS: vibra aunque la opción "vibrar" del teléfono esté desmarcada
+              // (la vibración de alarma no depende de esa opción, como la del reloj despertador)
+              @PluginMethod
+              public void vibrar(PluginCall call) {
+                  try {
+                      JSArray arr = call.getArray("patron");
+                      long[] p;
+                      if (arr == null || arr.length() == 0) {
+                          p = new long[] {0, 500, 200, 500, 200, 500};
+                      } else {
+                          p = new long[arr.length() + 1];
+                          p[0] = 0;
+                          for (int i = 0; i < arr.length(); i++) {
+                              p[i + 1] = arr.getLong(i);
+                          }
+                      }
+                      Vibrator v = (Vibrator) getContext().getSystemService(Context.VIBRATOR_SERVICE);
+                      if (v == null || !v.hasVibrator()) {
+                          call.reject("Este teléfono no tiene vibrador");
+                          return;
+                      }
+                      AudioAttributes aa = new AudioAttributes.Builder()
+                          .setUsage(AudioAttributes.USAGE_ALARM)
+                          .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                          .build();
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                          v.vibrate(VibrationEffect.createWaveform(p, -1), aa);
+                      } else {
+                          v.vibrate(p, -1, aa);
+                      }
+                      call.resolve();
+                  } catch (Exception e) {
+                      call.reject("No se pudo vibrar: " + e.getMessage());
                   }
               }
 
@@ -209,7 +249,7 @@ jobs:
           }
           JAVA
           # Servicio permanente (segundo plano): permisos, servicio y su ícono de notificación
-          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n</manifest>#' $M
+          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n    <uses-permission android:name="android.permission.VIBRATE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n</manifest>#' $M
           sed -i 's#</application>#        <receiver android:name="io.capawesome.capacitorjs.plugins.foregroundservice.NotificationActionBroadcastReceiver" />\n        <service android:name="io.capawesome.capacitorjs.plugins.foregroundservice.AndroidForegroundService" android:foregroundServiceType="connectedDevice|location" />\n    </application>#' $M
           mkdir -p android/app/src/main/res/drawable
           echo '<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24"><path android:fillColor="#FFFFFFFF" android:pathData="M15,13V5c0,-1.66 -1.34,-3 -3,-3S9,3.34 9,5v8c-1.21,0.91 -2,2.37 -2,4 0,2.76 2.24,5 5,5s5,-2.24 5,-5c0,-1.63 -0.79,-3.09 -2,-4zM11,5c0,-0.55 0.45,-1 1,-1s1,0.45 1,1v6h-2V5z"/></vector>' > android/app/src/main/res/drawable/ic_estacion.xml
