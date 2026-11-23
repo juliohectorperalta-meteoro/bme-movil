@@ -932,7 +932,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <button class="sec" data-ver="mas">📊 Más datos</button>
       </div>
     </div>
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>16/11/2026 · 21:05</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>23/11/2026 · 14:40</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -954,6 +954,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
       <b>Alarmas de lluvia y tormentas</b>
       <label style="display:flex;gap:10px;align-items:center;margin-top:10px"><input type="checkbox" id="chkLluvia" style="width:auto"> Avisar si va a llover en mi ubicación</label>
       <label style="display:flex;gap:10px;align-items:center;margin-top:8px"><input type="checkbox" id="chkTormenta" style="width:auto"> Avisar de tormentas con lluvia fuerte a menos de 30 km</label>
+      <div class="row" style="margin-top:10px"><button class="sec" id="btnProbarLluvia">🌧️ Probar alarma de lluvia</button></div>
+      <div class="estado" id="estadoLluvia">Todavía no se consultó.</div>
       <div class="estado">Usa pronósticos de modelos (Open-Meteo), no es una medición. Solo actualiza con la app abierta y con internet.</div>
     </div>
     <div class="card">
@@ -982,6 +984,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     <h2 id="tituloAlt">📍 Ubicación de la estación</h2>
     <p class="estado" style="margin:0 0 6px">Con las coordenadas del lugar, la estación pide las alertas del SMN, el pronóstico
       y los modelos para <b>ese lugar</b>, y usa el sensor BME280 móvil para las mediciones.</p>
+    <p class="estado" style="margin:0 0 6px">🛰️ El lugar y la altura se toman <b>solos con el GPS del teléfono</b>. Los campos manuales de abajo son solo para cuando no hay GPS (sin permiso, ubicación apagada o sin señal).</p>
     <div class="actual">Ahora: <b id="lugarActual">--</b></div>
 
     <label for="lugarNombre">Nombre del lugar</label>
@@ -996,8 +999,11 @@ svg.leaflet-image-layer.leaflet-interactive path {
       <button class="sec" id="btnGPS">🛰️ Usar el GPS del teléfono</button>
     </div>
     <div class="estado" id="gpsEstado"></div>
-    <label class="chk" for="autoGPS"><input type="checkbox" id="autoGPS"> <b>🛰️ Ubicación y altura automáticas</b></label>
-    <div class="estado" id="autoEstado">Sigue al teléfono con el GPS: cambia el lugar al alejarte 10 km o más y corrige la altura para el QNH. Hace falta el Bluetooth conectado.</div>
+    <input type="checkbox" id="autoGPS" hidden>
+    <div style="margin-top:10px"><b>🛰️ Ubicación y altura automáticas con el GPS</b></div>
+    <div class="estado" id="autoEstado">Siempre activas: la app lee el GPS del teléfono sola. Cambia el lugar al alejarte 10 km o más y corrige la altura para el QNH (hace falta el Bluetooth conectado). Los datos de arriba son solo para cuando no hay GPS.</div>
+    <div class="row" style="margin-top:6px"><button class="sec" id="btnReintentarGPS">🔄 Reintentar GPS</button>
+      <button class="sec oculto" id="btnAjustesUbic">📍 Encender ubicación</button></div>
 
     <h3 style="margin:14px 0 2px;font-size:16px">⛰️ Altura para el QNH</h3>
     <div class="actual">Ahora: <b id="altActual">-- m</b></div>
@@ -2380,6 +2386,11 @@ function dibujarAlarmas() {
   }
 }
 
+// Posición para lluvia, tormentas y radar: el GPS del teléfono si está fresco (menos de 30 min); si no, el lugar guardado
+function posClima() {
+  if (typeof ultPos !== "undefined" && ultPos && Date.now() - ultPos.t < 30 * 60e3) return { lat: ultPos.lat, lon: ultPos.lon };
+  return { lat: ubic && !isNaN(ubic.lat) ? ubic.lat : -31.4271, lon: ubic && !isNaN(ubic.lon) ? ubic.lon : -64.2183 };
+}
 // ===== Alarma de lluvia: modelos de Open-Meteo (pronóstico, no es una medición). Se consulta cada 10 min con la app abierta =====
 const UMBRAL_LLUVIA_MM = 0.3;          // mm esperados en la próxima hora para avisar
 let lluviaProx = null;                  // { t, mm, min }  (min = minutos hasta que empieza; 0 = ahora)
@@ -2400,7 +2411,7 @@ function alarmaLluviaPunto() {
 }
 async function consultarLluvia() {
   try {
-    const lat = ubic && !isNaN(ubic.lat) ? ubic.lat : -31.4271, lon = ubic && !isNaN(ubic.lon) ? ubic.lon : -64.2183;
+    const { lat, lon } = posClima();
     const j = await fetch("https://api.open-meteo.com/v1/forecast?latitude=" + lat.toFixed(3) + "&longitude=" + lon.toFixed(3) +
       "&minutely_15=precipitation&forecast_minutely_15=8&timeformat=unixtime&timezone=UTC", { cache: "no-store" }).then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
     const tt = j.minutely_15.time, pp = j.minutely_15.precipitation, ahora = Date.now() / 1000;
@@ -2411,9 +2422,10 @@ async function consultarLluvia() {
       if (primero < 0 && pp[i] >= 0.05) primero = Math.max(0, Math.round((tt[i] - ahora) / 60));
     }
     lluviaProx = { t: Date.now(), mm, min: primero < 0 ? 60 : primero };
+    estadoLluvia("lluvia", "lluvia en tu ubicación (próxima hora): " + mm.toFixed(1) + " mm");
     alarmasMovil = ultimaLectura ? calcularAlarmasMovil(ultimaLectura) : [];
     dibujarAlarmas();
-  } catch (e) { /* sin internet: se reintenta en 10 min; el último dato vale hasta 25 min */ }
+  } catch (e) { estadoLluvia("lluvia", "no se pudo consultar (" + (e && e.message || e) + ")"); }
 }
 // Tormentas cercanas: centro + anillos a 15 y 30 km en 8 direcciones (17 puntos). "Fuerte" = 7,5 mm/h o más, o tormenta eléctrica (códigos 95-99)
 let tormentaProx = null;
@@ -2421,7 +2433,7 @@ const DIRS = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"];
 async function consultarTormentas() {
   if (!optTormenta) { tormentaProx = null; return; }
   try {
-    const lat0 = ubic && !isNaN(ubic.lat) ? ubic.lat : -31.4271, lon0 = ubic && !isNaN(ubic.lon) ? ubic.lon : -64.2183;
+    const { lat: lat0, lon: lon0 } = posClima();
     const pts = [{ lat: lat0, lon: lon0, km: 0, dir: "" }];
     for (const km of [15, 30]) for (let b = 0; b < 8; b++) {
       const ang = b * Math.PI / 4;
@@ -2444,11 +2456,25 @@ async function consultarTormentas() {
       }
     });
     tormentaProx = Object.assign({ t: Date.now(), hay: false }, mejor || {});
+    estadoLluvia("tormenta", mejor ? "tormenta fuerte detectada a " + mejor.km + " km" : "sin tormentas fuertes a menos de 30 km");
     alarmasMovil = ultimaLectura ? calcularAlarmasMovil(ultimaLectura) : [];
     dibujarAlarmas();
-  } catch (e) { /* sin internet: se reintenta en 10 min */ }
+  } catch (e) { estadoLluvia("tormenta", "no se pudo consultar (" + (e && e.message || e) + ")"); }
+}
+const estLl = {};
+function estadoLluvia(k, txt) {
+  estLl[k] = new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) + " · " + txt;
+  const el = $("estadoLluvia");
+  if (el) el.innerHTML = "Última consulta:<br>" + (estLl.lluvia || "lluvia: …") + "<br>" + (estLl.tormenta || "tormentas: …");
 }
 function iniciarOpcionesLluvia() {
+  $("btnProbarLluvia").addEventListener("click", () => {
+    lluviaProx = { t: Date.now(), mm: 1.2, min: 15 };
+    tormentaProx = { t: Date.now(), hay: true, km: 25, dir: "NO", min: 20, mmh: 14, tor: true };
+    mostrarTab("vivo");
+    dibujarAlarmas();
+    setTimeout(consultarLluvia, 20000); setTimeout(consultarTormentas, 21000);   // vuelve a los datos reales
+  });
   const a = $("chkLluvia"), b = $("chkTormenta");
   if (!a || !b) return;
   a.checked = optLluvia; b.checked = optTormenta;
@@ -2631,7 +2657,8 @@ $("btnUsarCalc").addEventListener("click", () => { $("altNueva").value = Math.ro
 // porque la placa pide un pronóstico nuevo cada vez. Altura (QNH): cada vez que cambia 3 m o más, como mucho cada minuto.
 // Altura = terreno (modelo digital de elevación) + 1,5 m del sensor; sin internet, GPS filtrado y ajustado con el desvío aprendido.
 const AUTO = { ubicKm: 10, ubicMinS: 1800, altMinM: 3, altMinS: 60, precMax: 150, sensorM: 1.5, terrenoKm: 0.2, terrenoMinS: 600 };
-let autoGPS = leer("bme_auto", { on: false });
+let autoGPS = { on: true };   // siempre automático; solo pasa a manual si falta el permiso o no hay GPS
+let sinGPSTimer = null;
 let permisoUbic = false, GEO = null, geoWatchId = null, geoWebId = null;
 let ultPos = null, muestrasAlt = [], enviandoAuto = false;
 let desvioGPS = leer("bme_desvio_gps", null);            // altura GPS (elipsoide) menos terreno, aprendido con internet
@@ -2643,7 +2670,7 @@ function distanciaKm(la1, lo1, la2, lo2) {
 }
 function mediana(v) { const o = v.slice().sort((a, b) => a - b), n = o.length; return n ? (n % 2 ? o[(n - 1) / 2] : (o[n / 2 - 1] + o[n / 2]) / 2) : NaN; }
 function autoMsg(t) { $("autoEstado").textContent = t; }
-function guardarAuto() { guardar("bme_auto", autoGPS); }
+function guardarAuto() {}
 
 function asegurarCapacitor() {
   return new Promise((res, rej) => {
@@ -2739,6 +2766,33 @@ async function evaluarAuto() {
   finally { enviandoAuto = false; pintarAuto(); }
 }
 
+// Sin señal o con la ubicación del teléfono apagada: se avisa y queda a mano el modo manual
+function errorGPS(err) {
+  const m = String((err && err.message) || err || "");
+  const apagado = /disabled|not enabled|desactivad|apagad|unavailable|settings/i.test(m);
+  autoMsg(apagado ? "⚠️ La ubicación del teléfono está apagada: encendela (botón de abajo). Mientras tanto podés cargar el lugar a mano." : "⚠️ GPS: " + m + ". Si no mejora, cargá el lugar a mano.");
+  if (apagado) $("btnAjustesUbic").classList.remove("oculto");
+}
+function armarAvisoSinGPS() {
+  clearTimeout(sinGPSTimer);
+  sinGPSTimer = setTimeout(() => {
+    if (!ultPos && autoGPS.on) { autoMsg("⚠️ Sin señal GPS después de 90 s (¿adentro de un edificio o ubicación apagada?). Podés cargar el lugar a mano arriba; la app sigue intentando."); $("btnAjustesUbic").classList.remove("oculto"); }
+  }, 90000);
+}
+$("btnReintentarGPS").addEventListener("click", async () => {
+  autoGPS.on = true; $("autoGPS").checked = true; mostrarUbicacion(ubic);
+  $("btnAjustesUbic").classList.add("oculto");
+  await iniciarSeguimientoGPS(true);
+});
+$("btnAjustesUbic").addEventListener("click", () => {
+  const nat = alarmaNativa();
+  if (nat && nat.abrirUbicacion) nat.abrirUbicacion().catch(() => autoMsg("No se pudo abrir los ajustes: encendé la ubicación desde el panel del teléfono."));
+  else autoMsg("Encendé la ubicación desde el panel rápido del teléfono (deslizá desde arriba) y tocá Reintentar GPS.");
+});
+// Al volver a la app, si todavía no hay posición, se vuelve a intentar sin pedir nada
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && autoGPS.on && !ultPos) iniciarSeguimientoGPS(false);
+});
 function detenerSeguimientoGPS() {
   try { if (geoWatchId !== null && GEO) GEO.clearWatch({ id: geoWatchId }).catch(() => {}); } catch (e) {}
   geoWatchId = null;
@@ -2761,7 +2815,7 @@ async function iniciarSeguimientoGPS(pedirPermiso) {
         perm = await conLimite(GEO.requestPermissions({ permissions: ["location"] }), 90000, "el permiso de ubicación no respondió (¿está apagada la ubicación del teléfono?)");
         if (!perm || perm.location !== "granted") {
           autoGPS.on = false; guardarAuto(); $("autoGPS").checked = false;
-          autoMsg("❌ Permiso de ubicación denegado. Habilitalo en Ajustes → Aplicaciones → Estación Móvil → Permisos → Ubicación.");
+          autoMsg("❌ Permiso de ubicación denegado: usá el modo manual (coordenadas de arriba). Para el automático habilitalo en Ajustes → Aplicaciones → Estación Móvil → Permisos → Ubicación y tocá Reintentar GPS.");
           return;
         }
       }
@@ -2769,14 +2823,15 @@ async function iniciarSeguimientoGPS(pedirPermiso) {
       await reiniciarServicio();        // el servicio pasa a tipo "ubicación" y sigue con la pantalla apagada
       geoWatchId = await conLimite(GEO.watchPosition(
         { enableHighAccuracy: true, timeout: 60000, maximumAge: 30000, minimumUpdateInterval: 20000, interval: 60000 },
-        (pos, err) => { if (pos && pos.coords) procesarPosicion(pos.coords, pos.timestamp); else if (err) autoMsg("⚠️ GPS: " + (err.message || err)); }), 15000, "el GPS no respondió");
+        (pos, err) => { if (pos && pos.coords) procesarPosicion(pos.coords, pos.timestamp); else if (err) errorGPS(err); }), 15000, "el GPS no respondió");
+      armarAvisoSinGPS();
     } catch (e) {
       autoMsg("⚠️ No se pudo iniciar el GPS: " + (e && e.message ? e.message : e));
     }
   } else {
     if (!navigator.geolocation) { autoMsg("Este navegador no da la ubicación."); return; }
     geoWebId = navigator.geolocation.watchPosition(pos => procesarPosicion(pos.coords, pos.timestamp),
-      err => autoMsg(err.code === 1 ? "❌ Permiso de ubicación denegado (habilitalo para esta página en Chrome)." : "⚠️ GPS: " + err.message),
+      err => { if (err.code === 1) autoMsg("❌ Permiso de ubicación denegado (habilitalo para esta página en Chrome). Usá el modo manual."); else errorGPS(err); },
       { enableHighAccuracy: true, maximumAge: 30000, timeout: 60000 });
     autoMsg("🛰️ Buscando señal GPS… (en la versión web solo funciona con la app abierta en pantalla)");
   }
@@ -3094,7 +3149,7 @@ aplicarEstilo(estiloInst);
 mostrarPronostico(leer("bme_pron", null));
 mostrarUbicacion(ubic);
 setTimeout(autoConectar, 300);
-if (autoGPS.on) setTimeout(() => iniciarSeguimientoGPS(false), 1500);
+setTimeout(() => iniciarSeguimientoGPS(true), 1500);   // la primera vez pide el permiso solo; si ya lo tiene, no pregunta nada
 cargarCfg().then(c => { if (c.canal) cargarThingSpeak(); });
 dibujarVivo();
 if (historial.length) {
@@ -3170,7 +3225,7 @@ if (!navigator.bluetooth && !NATIVO) {
                   clouds: "Pronóstico de nubes de los modelos (no es una medición)." };
   let capa = "radar", cargado = "";
   function url() {
-    const c = CAPAS[capa], lat = (ubic && !isNaN(ubic.lat) ? ubic.lat : -31.4271).toFixed(3), lon = (ubic && !isNaN(ubic.lon) ? ubic.lon : -64.2183).toFixed(3);
+    const c = CAPAS[capa], pc = posClima(), lat = pc.lat.toFixed(3), lon = pc.lon.toFixed(3);
     return "https://embed.windy.com/embed2.html?lat=" + lat + "&lon=" + lon + "&detailLat=" + lat + "&detailLon=" + lon +
            "&zoom=6&level=surface&overlay=" + c.ov + "&product=" + c.prod + "&menu=&message=&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=km%2Fh&metricTemp=%C2%B0C&radarRange=-1";
   }
