@@ -80,6 +80,7 @@ jobs:
           import android.os.Build;
           import android.os.Handler;
           import android.os.VibrationEffect;
+          import android.provider.Settings;
           import android.os.Vibrator;
           import com.getcapacitor.JSArray;
           import android.os.Looper;
@@ -220,6 +221,19 @@ jobs:
                       call.resolve();
                   } catch (Exception e) {
                       call.reject("No se pudo vibrar: " + e.getMessage());
+                  }
+              }
+
+              // Abre los ajustes de ubicación del teléfono para encender el GPS
+              @PluginMethod
+              public void abrirUbicacion(PluginCall call) {
+                  try {
+                      Intent i = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
+                      i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                      getContext().startActivity(i);
+                      call.resolve();
+                  } catch (Exception e) {
+                      call.reject("No se pudo abrir los ajustes de ubicación: " + e.getMessage());
                   }
               }
 
