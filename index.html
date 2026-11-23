@@ -932,7 +932,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <button class="sec" data-ver="mas">📊 Más datos</button>
       </div>
     </div>
-    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>23/11/2026 · 14:40</b> <span id="tipoApp"></span></div>
+    <div class="estado" style="text-align:center;margin-bottom:10px">Versión de la app: <b>23/11/2026 · 21:00</b> <span id="tipoApp"></span></div>
     <div class="card" style="margin-bottom:10px">
       <b>Segundo plano</b>
       <p class="estado" style="margin:6px 0">Sigue recibiendo lecturas y avisa las alarmas con una notificación,
@@ -957,6 +957,22 @@ svg.leaflet-image-layer.leaflet-interactive path {
       <div class="row" style="margin-top:10px"><button class="sec" id="btnProbarLluvia">🌧️ Probar alarma de lluvia</button></div>
       <div class="estado" id="estadoLluvia">Todavía no se consultó.</div>
       <div class="estado">Usa pronósticos de modelos (Open-Meteo), no es una medición. Solo actualiza con la app abierta y con internet.</div>
+    </div>
+    <div class="card" style="margin-bottom:10px">
+      <b>📶 WiFi de la estación</b>
+      <div class="estado">Cargá una red que no está en la lista del firmware (por ejemplo, el WiFi de otro lugar). La estación la prueba y solo la guarda si conecta. Hace falta el Bluetooth conectado.</div>
+      <div class="row" style="margin-top:8px"><button class="sec" id="btnWifiBuscar">🔍 Buscar redes</button>
+        <button class="sec" id="btnWifiEstado">ℹ️ Red actual</button></div>
+      <div id="wifiLista" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
+      <label for="wifiSsid">Nombre de la red (SSID)</label>
+      <input id="wifiSsid" maxlength="32" autocapitalize="off" autocomplete="off" placeholder="elegila de la lista o escribila">
+      <label for="wifiClave">Clave (vacía si la red es abierta)</label>
+      <input id="wifiClave" type="password" maxlength="63" autocomplete="off" placeholder="8 a 63 caracteres">
+      <label for="wifiPin">PIN de la estación (BLE_PIN_WIFI en secretos.h)</label>
+      <input id="wifiPin" inputmode="numeric" autocomplete="off" placeholder="el PIN que pusiste en el firmware">
+      <div class="row" style="margin-top:10px"><button id="btnWifiConectar">Conectar y guardar</button>
+        <button class="sec" id="btnWifiBorrar">🗑️ Borrar las agregadas</button></div>
+      <div class="estado" id="wifiEstado"></div>
     </div>
     <div class="card">
       <b>Canal ThingSpeak del BME280 móvil</b>
@@ -1851,6 +1867,7 @@ function procesarLinea(linea) {
     agregarLog(linea);
     return;
   }
+  if (linea.startsWith("[WIFI]")) { wifiLinea(linea); return; }
   if (linea.startsWith("[ALT]")) {
     const a = num(/Altitud(?: actual)?\s+(-?[\d.]+)\s*m/, linea);
     mostrarAltura(a);
@@ -2385,6 +2402,52 @@ function dibujarAlarmas() {
     notificar("Alarma · Estación Móvil", partes.join("\n"));
   }
 }
+
+// ===== WiFi de la estación: cargar una red que no está en la lista del firmware (por Bluetooth) =====
+let wifiPinGuardado = leer("bme_pin_wifi", "");
+function wifiMsg(t) { $("wifiEstado").textContent = t; }
+async function wifiCmd(cmd) {
+  if (!rxChar) { wifiMsg("⚠️ Conectá el Bluetooth con la estación primero."); return false; }
+  try { await rxChar.writeValue(new TextEncoder().encode(cmd + "\n")); return true; }
+  catch (e) { wifiMsg("❌ No se pudo enviar: " + e.message); return false; }
+}
+function wifiLinea(linea) {
+  const m = linea.match(/^\[WIFI\]\s+RED\s+(-?\d+)\s+(.*)$/);
+  if (m) {
+    const b = document.createElement("button");
+    b.className = "sec"; b.type = "button";
+    b.textContent = m[2] + " (" + m[1] + " dBm)";
+    b.addEventListener("click", () => { $("wifiSsid").value = m[2]; $("wifiClave").focus(); });
+    $("wifiLista").appendChild(b);
+    return;
+  }
+  const t = linea.replace("[WIFI]", "").trim();
+  if (t === "BUSCANDO") { $("wifiLista").textContent = ""; wifiMsg("🔍 Buscando redes… (tarda unos segundos)"); }
+  else if (t === "FIN") wifiMsg($("wifiLista").children.length ? "Tocá una red de la lista o escribí el nombre." : "No se vio ninguna red.");
+  else if (t.startsWith("OK")) { wifiMsg("✅ " + t.replace(/^OK\s*/, "")); $("wifiClave").value = ""; }
+  else if (t.startsWith("ERROR")) wifiMsg("❌ " + t.replace(/^ERROR\s*/, ""));
+  else if (t.startsWith("ACTUAL")) wifiMsg("📶 " + t.replace(/^ACTUAL\s*/, ""));
+  else wifiMsg(t);
+  agregarLog("[WIFI] " + t.replace(/\s*\|\s*IP.*$/, ""));
+}
+$("wifiPin").value = wifiPinGuardado;
+$("btnWifiBuscar").addEventListener("click", async () => { wifiMsg("Pidiendo la búsqueda…"); await wifiCmd("wifi scan"); });
+$("btnWifiEstado").addEventListener("click", async () => { await wifiCmd("wifi?"); });
+$("btnWifiConectar").addEventListener("click", async () => {
+  const limpio = v => String(v).replace(/[\r\n]/g, "");
+  const ssid = limpio($("wifiSsid").value).trim(), clave = limpio($("wifiClave").value), pin = limpio($("wifiPin").value).trim();
+  if (!ssid) { wifiMsg("❌ Escribí o elegí el nombre de la red."); return; }
+  if (ssid.includes("|") || pin.includes("|")) { wifiMsg("❌ El nombre y el PIN no pueden tener el signo |."); return; }
+  if (clave && clave.length < 8) { wifiMsg("❌ La clave tiene que tener al menos 8 caracteres (o dejala vacía si la red es abierta)."); return; }
+  guardar("bme_pin_wifi", pin);
+  wifiMsg("Enviando… la estación prueba la red (puede tardar hasta 1 minuto y se corta un momento el WiFi).");
+  await wifiCmd("wifi " + pin + "|" + ssid + "|" + clave);
+});
+$("btnWifiBorrar").addEventListener("click", async () => {
+  const pin = String($("wifiPin").value).replace(/[\r\n|]/g, "").trim();
+  guardar("bme_pin_wifi", pin);
+  await wifiCmd("wifi borrar " + pin);
+});
 
 // Posición para lluvia, tormentas y radar: el GPS del teléfono si está fresco (menos de 30 min); si no, el lugar guardado
 function posClima() {
